@@ -21,7 +21,9 @@ type Order = {
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 
 export default function Home() {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+  const apiBaseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "");
   const [token, setToken] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);

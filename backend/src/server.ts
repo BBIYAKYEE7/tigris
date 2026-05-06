@@ -21,10 +21,10 @@ app.get("/api/menu", (_req, res) => {
   res.json({ menuItems });
 });
 
-app.post("/api/orders", (req, res) => {
+app.post("/api/orders", async (req, res) => {
   try {
     const body = req.body as { customerName?: string; quantities?: Record<string, number> };
-    const order = orderStore.createOrder(body.customerName ?? "", body.quantities ?? {});
+    const order = await orderStore.createOrder(body.customerName ?? "", body.quantities ?? {});
     res.status(201).json({ order });
   } catch (error) {
     const message = error instanceof Error ? error.message : "주문 생성 실패";
@@ -42,16 +42,17 @@ const validateAdmin = (requestToken: string | undefined) => {
   return null;
 };
 
-app.get("/api/admin/orders", (req, res) => {
+app.get("/api/admin/orders", async (req, res) => {
   const authError = validateAdmin(req.header("x-admin-token"));
   if (authError) {
     res.status(401).json({ message: authError });
     return;
   }
-  res.json({ orders: orderStore.listOrders() });
+  const orders = await orderStore.listOrders();
+  res.json({ orders });
 });
 
-app.patch("/api/admin/orders/:id", (req, res) => {
+app.patch("/api/admin/orders/:id", async (req, res) => {
   const authError = validateAdmin(req.header("x-admin-token"));
   if (authError) {
     res.status(401).json({ message: authError });
@@ -63,7 +64,7 @@ app.patch("/api/admin/orders/:id", (req, res) => {
       res.status(400).json({ message: "유효한 상태값이 아닙니다." });
       return;
     }
-    const order = orderStore.updateOrderStatus(req.params.id, status);
+    const order = await orderStore.updateOrderStatus(req.params.id, status);
     res.json({ order });
   } catch (error) {
     const message = error instanceof Error ? error.message : "상태 변경 실패";
@@ -71,6 +72,10 @@ app.patch("/api/admin/orders/:id", (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`TIGRIS backend server running on http://localhost:${port}`);
-});
+if (process.env.VERCEL !== "1") {
+  app.listen(port, () => {
+    console.log(`TIGRIS backend server running on http://localhost:${port}`);
+  });
+}
+
+export default app;

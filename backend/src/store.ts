@@ -43,48 +43,60 @@ export const menuItems: MenuItem[] = [
   { id: "water", name: "생수", price: 1000, category: "extra" },
 ];
 
-class InMemoryOrderStore {
+type OrderStore = {
+  listOrders: () => Promise<Order[]>;
+  createOrder: (customerName: string, quantities: Record<string, number>) => Promise<Order>;
+  updateOrderStatus: (id: string, status: OrderStatus) => Promise<Order>;
+};
+
+const createOrderPayload = (customerName: string, quantities: Record<string, number>) => {
+  const items = Object.entries(quantities)
+    .filter(([, qty]) => qty > 0)
+    .map(([menuId, qty]) => {
+      const menu = menuItems.find((item) => item.id === menuId);
+      if (!menu) {
+        throw new Error(`Unknown menu id: ${menuId}`);
+      }
+      return {
+        menuId: menu.id,
+        name: menu.name,
+        unitPrice: menu.price,
+        quantity: qty,
+        lineTotal: menu.price * qty,
+      };
+    });
+
+  if (items.length === 0) {
+    throw new Error("최소 1개 이상 선택해주세요.");
+  }
+
+  const totalAmount = items.reduce((sum, item) => sum + item.lineTotal, 0);
+  const order: Order = {
+    id: `TGR-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    customerName: customerName.trim() || "현장손님",
+    items,
+    totalAmount,
+    status: "PENDING",
+    createdAt: new Date().toISOString(),
+  };
+
+  return order;
+};
+
+class InMemoryOrderStore implements OrderStore {
   private orders: Order[] = [];
 
-  listOrders() {
+  async listOrders() {
     return this.orders;
   }
 
-  createOrder(customerName: string, quantities: Record<string, number>) {
-    const items = Object.entries(quantities)
-      .filter(([, qty]) => qty > 0)
-      .map(([menuId, qty]) => {
-        const menu = menuItems.find((item) => item.id === menuId);
-        if (!menu) {
-          throw new Error(`Unknown menu id: ${menuId}`);
-        }
-        return {
-          menuId: menu.id,
-          name: menu.name,
-          unitPrice: menu.price,
-          quantity: qty,
-          lineTotal: menu.price * qty,
-        };
-      });
-
-    if (items.length === 0) {
-      throw new Error("최소 1개 이상 선택해주세요.");
-    }
-
-    const totalAmount = items.reduce((sum, item) => sum + item.lineTotal, 0);
-    const order: Order = {
-      id: `TGR-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      customerName: customerName.trim() || "현장손님",
-      items,
-      totalAmount,
-      status: "PENDING",
-      createdAt: new Date().toISOString(),
-    };
+  async createOrder(customerName: string, quantities: Record<string, number>) {
+    const order = createOrderPayload(customerName, quantities);
     this.orders.unshift(order);
     return order;
   }
 
-  updateOrderStatus(id: string, status: OrderStatus) {
+  async updateOrderStatus(id: string, status: OrderStatus) {
     const target = this.orders.find((order) => order.id === id);
     if (!target) {
       throw new Error("주문을 찾을 수 없습니다.");
@@ -94,4 +106,87 @@ class InMemoryOrderStore {
   }
 }
 
-export const orderStore = new InMemoryOrderStore();
+class UpstashOrderStore implements OrderStore {
+  private readonly url: string;
+  private readonly token: string;
+  private readonly key = "tigris:orders";
+
+  constructor(url: string, token: string) {
+    this.url = url;
+    this.token = token;
+  }
+
+  private async request<T>(path: string, init?: RequestInit) {
+    const response = await fetch(`${this.url}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Upstash 요청 실패: ${response.status}`);
+    }
+    return (await response.json()) as T;
+  }
+
+  private async readOrders() {
+    const data = await this.request<{ result: Order[] | string | null }>("/get/tigris:orders");
+    if (!data.result) {
+      return [];
+    }
+    if (typeof data.result === "string") {
+      try {
+        return JSON.parse(data.result) as Order[];
+      } catch {
+        return [];
+      }
+    }
+    return data.result;
+  }
+
+  private async writeOrders(orders: Order[]) {
+    await this.request<{ result: string }>(`/set/${this.key}`, {
+      method: "POST",
+      body: JSON.stringify(orders),
+    });
+  }
+
+  async listOrders() {
+    return this.readOrders();
+  }
+
+  async createOrder(customerName: string, quantities: Record<string, number>) {
+    const order = createOrderPayload(customerName, quantities);
+    const current = await this.readOrders();
+    current.unshift(order);
+    await this.writeOrders(current);
+    return order;
+  }
+
+  async updateOrderStatus(id: string, status: OrderStatus) {
+    const current = await this.readOrders();
+    const target = current.find((order) => order.id === id);
+    if (!target) {
+      throw new Error("주문을 찾을 수 없습니다.");
+    }
+    target.status = status;
+    await this.writeOrders(current);
+    return target;
+  }
+}
+
+const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const isVercelRuntime = process.env.VERCEL === "1";
+
+if (isVercelRuntime && (!upstashUrl || !upstashToken)) {
+  console.warn(
+    "[TIGRIS] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 미설정: 메모리 저장소로 동작하여 데이터가 유지되지 않습니다.",
+  );
+}
+
+export const orderStore: OrderStore =
+  upstashUrl && upstashToken
+    ? new UpstashOrderStore(upstashUrl, upstashToken)
+    : new InMemoryOrderStore();
