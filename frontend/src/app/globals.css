@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #27272a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), "Apple SD Gothic Neo", "Noto Sans KR",
+    Arial, Helvetica, sans-serif;
+}
+
+.snow-particle {
+  position: absolute;
+  display: block;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #ffffff 0%, #fffaf0 60%, #ffe3f0 100%);
+  box-shadow:
+    0 0 14px rgba(255, 255, 255, 1),
+    0 0 24px rgba(255, 227, 240, 0.8);
+  opacity: 1;
+  animation-name: snow-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes snow-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -6vh, 0) scale(0.9);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.98;
+    transform: translate3d(var(--drift, 8px), 118vh, 0) scale(1.08);
+  }
+}
+
+@media (max-width: 640px) {
+  .snow-particle {
+    opacity: 0.9;
+    box-shadow:
+      0 0 10px rgba(255, 255, 255, 0.85),
+      0 0 18px rgba(255, 227, 240, 0.6);
+  }
+}
