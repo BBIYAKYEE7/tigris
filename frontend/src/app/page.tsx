@@ -235,7 +235,7 @@ export default function Home() {
               <li>운영 시간: 18:00 ~ 24:00</li>
               <li>결제: 카드 / 계좌이체 / 현금 가능</li>
               <li>문의: @kutigris (Instagram)</li>
-              <li>관리자 페이지: 별도 admin 서비스에서 확인</li>
+              <li>관리자 페이지: /admin</li>
             </ul>
           </article>
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
