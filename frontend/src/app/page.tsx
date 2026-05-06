@@ -30,7 +30,7 @@ const snowflakes = Array.from({ length: 36 }, (_, index) => {
 export default function Home() {
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ??
-    (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "");
+    (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "/-/backend");
   const [customerName, setCustomerName] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
