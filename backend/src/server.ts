@@ -1,0 +1,76 @@
+import cors from "cors";
+import express from "express";
+import { menuItems, orderStore, type OrderStatus } from "./store";
+
+const app = express();
+const port = Number(process.env.PORT ?? 4000);
+const adminToken = process.env.ADMIN_TOKEN ?? "";
+
+app.use(
+  cors({
+    origin: true,
+  }),
+);
+app.use(express.json());
+
+app.get("/health", (_req, res) => {
+  res.json({ ok: true });
+});
+
+app.get("/api/menu", (_req, res) => {
+  res.json({ menuItems });
+});
+
+app.post("/api/orders", (req, res) => {
+  try {
+    const body = req.body as { customerName?: string; quantities?: Record<string, number> };
+    const order = orderStore.createOrder(body.customerName ?? "", body.quantities ?? {});
+    res.status(201).json({ order });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "주문 생성 실패";
+    res.status(400).json({ message });
+  }
+});
+
+const validateAdmin = (requestToken: string | undefined) => {
+  if (!adminToken) {
+    return "서버 ADMIN_TOKEN이 설정되지 않았습니다.";
+  }
+  if (requestToken !== adminToken) {
+    return "관리자 인증 실패";
+  }
+  return null;
+};
+
+app.get("/api/admin/orders", (req, res) => {
+  const authError = validateAdmin(req.header("x-admin-token"));
+  if (authError) {
+    res.status(401).json({ message: authError });
+    return;
+  }
+  res.json({ orders: orderStore.listOrders() });
+});
+
+app.patch("/api/admin/orders/:id", (req, res) => {
+  const authError = validateAdmin(req.header("x-admin-token"));
+  if (authError) {
+    res.status(401).json({ message: authError });
+    return;
+  }
+  try {
+    const status = req.body?.status as OrderStatus | undefined;
+    if (!status || !["PENDING", "PAID"].includes(status)) {
+      res.status(400).json({ message: "유효한 상태값이 아닙니다." });
+      return;
+    }
+    const order = orderStore.updateOrderStatus(req.params.id, status);
+    res.json({ order });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "상태 변경 실패";
+    res.status(400).json({ message });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`TIGRIS backend server running on http://localhost:${port}`);
+});
