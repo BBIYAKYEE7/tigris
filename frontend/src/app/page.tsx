@@ -91,6 +91,9 @@ export default function Home() {
   const [modalOpen, setModalOpen] = useState(false);
   const [tableInput, setTableInput] = useState("");
   const [modalError, setModalError] = useState("");
+  const [tableLockError, setTableLockError] = useState("");
+
+  const tableLocked = activeTableNum !== null && tableOrders.length > 0;
 
   useEffect(() => {
     mounted.current = true;
@@ -172,6 +175,11 @@ export default function Home() {
 
   const applyTableNumber = () => {
     setTablePickerError("");
+    setTableLockError("");
+    if (tableLocked) {
+      setTableLockError("결제대기 주문이 있어 테이블 번호를 변경할 수 없습니다. 결제 완료 후 다시 시도해 주세요.");
+      return;
+    }
     const n = parseInt(tablePickerDraft.trim(), 10);
     if (Number.isNaN(n) || n < 1 || n > 999) {
       setTablePickerError("1~999 사이 테이블 번호를 입력해 주세요.");
@@ -182,6 +190,11 @@ export default function Home() {
   };
 
   const resetTableNumber = () => {
+    setTableLockError("");
+    if (tableLocked) {
+      setTableLockError("결제대기 주문이 있어 테이블 번호를 초기화할 수 없습니다. 결제 완료 후 다시 시도해 주세요.");
+      return;
+    }
     clearSessionTable();
     setActiveTableNum(null);
     setTableOrders([]);
@@ -357,6 +370,11 @@ export default function Home() {
             같은 번호를 입력한 손님은 <span className="font-semibold">서로 같은 주문 목록</span>을 볼 수 있습니다.
             카운터에서 해당 테이블 건을 결제완료 처리하면 여기 목록에서 사라집니다.
           </p>
+          {tableLocked ? (
+            <p className="mt-2 text-sm font-semibold text-pink-700">
+              결제대기 주문이 있어 테이블 번호가 잠겼습니다. (결제 완료되면 다시 변경 가능)
+            </p>
+          ) : null}
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
             <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-zinc-700">
               우리 테이블
@@ -368,13 +386,15 @@ export default function Home() {
                 value={tablePickerDraft}
                 onChange={(e) => setTablePickerDraft(e.target.value)}
                 placeholder="예: 5"
-                className="h-11 rounded-xl border border-pink-200 bg-white px-3 text-sm focus:border-pink-400 focus:outline-none"
+                disabled={tableLocked}
+                className="h-11 rounded-xl border border-pink-200 bg-white px-3 text-sm focus:border-pink-400 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500"
               />
             </label>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={applyTableNumber}
+                disabled={tableLocked}
                 className="h-11 rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500"
               >
                 적용하기
@@ -383,7 +403,8 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={resetTableNumber}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                  disabled={tableLocked}
+                  className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
                 >
                   테이블 초기화
                 </button>
@@ -391,6 +412,7 @@ export default function Home() {
             </div>
           </div>
           {tablePickerError ? <p className="mt-2 text-sm text-rose-600">{tablePickerError}</p> : null}
+          {tableLockError ? <p className="mt-2 text-sm text-rose-600">{tableLockError}</p> : null}
           {activeTableNum !== null ? (
             <p className="mt-3 text-sm font-semibold text-pink-700">
               현재 연결됨: {activeTableNum}번 테이블 · 새로고침해도 이 탭에서는 유지됩니다.
@@ -570,8 +592,9 @@ export default function Home() {
                 value={tableInput}
                 onChange={(e) => setTableInput(e.target.value)}
                 placeholder="예: 5"
-                className="mt-1 w-full rounded-xl border border-pink-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none"
-                autoFocus
+                disabled={activeTableNum !== null}
+                className="mt-1 w-full rounded-xl border border-pink-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500"
+                autoFocus={activeTableNum === null}
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     closeModal();

@@ -31,6 +31,9 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const mounted = useRef(true);
+  const previousOrdersRef = useRef<Order[]>([]);
+  const [alertOrder, setAlertOrder] = useState<Order | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -58,7 +61,21 @@ export default function AdminPage() {
         if (!mounted.current) {
           return;
         }
-        setOrders(data.orders);
+        const nextOrders = data.orders;
+        const prevOrders = previousOrdersRef.current;
+        setOrders(nextOrders);
+        previousOrdersRef.current = nextOrders;
+        // 새로 들어온 결제대기 주문 감지 → 알림 모달
+        if (!alertOpen) {
+          const prevIds = new Set(prevOrders.map((o) => o.id));
+          const newPending = nextOrders.find(
+            (order) => order.status === "PENDING" && !prevIds.has(order.id),
+          );
+          if (newPending) {
+            setAlertOrder(newPending);
+            setAlertOpen(true);
+          }
+        }
         setLastUpdatedAt(new Date());
       } catch (err) {
         if (!mounted.current) {
@@ -99,6 +116,24 @@ export default function AdminPage() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [fetchOrders]);
+
+  const TABLE_COUNT = 27;
+
+  const latestPendingOrderByTable = (tableNum: number) => {
+    const label = `${tableNum}번 테이블`;
+    const candidates = orders.filter(
+      (order) => order.customerName === label && order.status === "PENDING",
+    );
+    if (candidates.length === 0) {
+      return null;
+    }
+    return candidates
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )[0];
+  };
 
   const markPaid = async (orderId: string) => {
     setError("");
@@ -176,56 +211,176 @@ export default function AdminPage() {
         {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
       </section>
 
-      <section className="mx-auto mt-4 max-w-5xl space-y-3">
-        {loading && orders.length === 0 ? (
-          <div className="rounded-2xl border border-pink-100 bg-white p-4 text-sm text-zinc-600">
-            주문 목록을 불러오는 중입니다…
-          </div>
-        ) : null}
-        {!loading && orders.length === 0 ? (
-          <div className="rounded-2xl border border-pink-100 bg-white p-4 text-sm text-zinc-600">
-            접수된 주문이 없습니다.
-          </div>
-        ) : null}
-        {orders.map((order) => (
-          <article
-            key={order.id}
-            className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-bold text-pink-700">{order.id}</h2>
-              <span
-                className={`rounded-full px-2 py-1 text-xs font-bold ${
-                  order.status === "PAID"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-amber-100 text-amber-700"
-                }`}
+      <section className="mx-auto mt-4 max-w-5xl space-y-4">
+        <div className="rounded-2xl border border-pink-100 bg-white p-4 text-sm text-zinc-700">
+          <h2 className="text-base font-bold text-pink-700">테이블별 주문 현황</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            1~27번 테이블 기준으로, 각 테이블의 가장 최근{" "}
+            <span className="font-semibold">결제대기 주문</span>을 보여줍니다.
+          </p>
+          {loading && orders.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-600">주문 목록을 불러오는 중입니다…</p>
+          ) : null}
+          {!loading && orders.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-600">
+              아직 접수된 주문이 없습니다. (테이블 카드들은 미리 보이지만, 실제 주문이 들어오면 자동으로 채워집니다.)
+            </p>
+          ) : null}
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: TABLE_COUNT }, (_, index) => {
+            const tableNum = index + 1;
+            const latest = latestPendingOrderByTable(tableNum);
+            return (
+              <article
+                key={tableNum}
+                className="flex flex-col rounded-2xl border border-pink-100 bg-white p-3 text-sm shadow-sm"
               >
-                {order.status === "PAID" ? "결제완료" : "결제대기"}
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-zinc-700">주문자: {order.customerName}</p>
-            <p className="text-xs text-zinc-500">{new Date(order.createdAt).toLocaleString("ko-KR")}</p>
-            <ul className="mt-2 space-y-1 text-sm text-zinc-700">
-              {order.items.map((item) => (
-                <li key={`${order.id}-${item.menuId}`}>
-                  {item.name} x {item.quantity} = {formatKrw(item.lineTotal)}
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-pink-700">
+                    {tableNum}번 테이블
+                  </h3>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                      latest
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-zinc-100 text-zinc-500"
+                    }`}
+                  >
+                    {latest ? "결제대기" : "주문 없음"}
+                  </span>
+                </div>
+                {latest ? (
+                  <>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {new Date(latest.createdAt).toLocaleTimeString("ko-KR")}
+                    </p>
+                    <ul className="mt-2 grow space-y-0.5 text-xs text-zinc-700">
+                      {latest.items.map((item) => (
+                        <li key={`${latest.id}-${item.menuId}`}>
+                          {item.name} × {item.quantity} ={" "}
+                          {formatKrw(item.lineTotal)}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-xs font-bold text-zinc-800">
+                      총 결제 금액: {formatKrw(latest.totalAmount)}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => markPaid(latest.id)}
+                      className="mt-2 h-8 rounded-lg bg-emerald-600 px-2 text-[11px] font-bold text-white transition hover:bg-emerald-500"
+                    >
+                      결제완료 처리
+                    </button>
+                  </>
+                ) : (
+                  <p className="mt-2 grow text-xs text-zinc-500">
+                    결제 대기 중인 주문이 없습니다.
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="rounded-2xl border border-pink-50 bg-white/70 p-4 text-xs text-zinc-600">
+          <h3 className="text-sm font-bold text-pink-600">전체 주문 리스트</h3>
+          {orders.length === 0 ? (
+            <p className="mt-2">주문이 들어오면 여기에도 시간순으로 쌓입니다.</p>
+          ) : (
+            <ul className="mt-2 space-y-1 max-h-64 overflow-y-auto">
+              {orders.map((order) => (
+                <li key={order.id} className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[11px] text-zinc-500">
+                    {new Date(order.createdAt).toLocaleTimeString("ko-KR")}
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-700">
+                    {order.customerName}
+                  </span>
+                  <span className="text-xs text-zinc-500">{order.id}</span>
+                  <span className="text-xs font-bold text-pink-700">
+                    {formatKrw(order.totalAmount)}
+                  </span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      order.status === "PAID"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {order.status === "PAID" ? "결제완료" : "결제대기"}
+                  </span>
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-sm font-bold">총 결제 금액: {formatKrw(order.totalAmount)}</p>
-            {order.status === "PENDING" ? (
+          )}
+        </div>
+      </section>
+
+      {alertOpen && alertOrder ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-order-alert-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setAlertOpen(false);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-pink-100 bg-white p-5 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2
+              id="admin-order-alert-title"
+              className="text-lg font-bold text-pink-700"
+            >
+              새 주문이 들어왔어요
+            </h2>
+            <p className="mt-1 text-sm text-zinc-700">
+              {alertOrder.customerName}에 새로운 결제 대기 주문이 있습니다.
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {new Date(alertOrder.createdAt).toLocaleString("ko-KR")}
+            </p>
+            <ul className="mt-3 space-y-1 text-sm text-zinc-700">
+              {alertOrder.items.map((item) => (
+                <li key={`${alertOrder.id}-${item.menuId}`}>
+                  {item.name} × {item.quantity} = {formatKrw(item.lineTotal)}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-sm font-bold text-zinc-800">
+              총 결제 금액: {formatKrw(alertOrder.totalAmount)}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => markPaid(order.id)}
-                className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500"
+                onClick={() => setAlertOpen(false)}
+                className="h-9 rounded-lg border border-zinc-200 px-4 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50"
               >
-                결제완료 처리
+                닫기
               </button>
-            ) : null}
-          </article>
-        ))}
-      </section>
+              {alertOrder.status === "PENDING" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void markPaid(alertOrder.id);
+                    setAlertOpen(false);
+                  }}
+                  className="h-9 rounded-lg bg-emerald-600 px-4 text-xs font-bold text-white transition hover:bg-emerald-500"
+                >
+                  바로 결제완료 처리
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
