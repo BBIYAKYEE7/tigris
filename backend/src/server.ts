@@ -60,6 +60,7 @@ const validateAdminWrite = (requestToken: string | undefined) => {
 };
 
 app.get("/api/admin/orders", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
   const orders = await orderStore.listOrders();
   res.json({ orders });
 });

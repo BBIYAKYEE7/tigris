@@ -112,9 +112,15 @@ export default function AdminPage() {
       }
       setError("");
       try {
-        const response = await fetch(`${apiBaseUrl}/api/admin/orders`);
+        const response = await fetch(`${apiBaseUrl}/api/admin/orders`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
+          },
+        });
         const data = (await response.json()) as { orders?: Order[]; message?: string };
-        if (!response.ok || !data.orders) {
+        if (!response.ok || !Array.isArray(data.orders)) {
           throw new Error(data.message ?? "주문 조회에 실패했습니다.");
         }
         if (!mounted.current) {

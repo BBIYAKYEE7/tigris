@@ -249,13 +249,18 @@ const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
 const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 const isVercelRuntime = process.env.VERCEL === "1";
 
-if (isVercelRuntime && (!upstashUrl || !upstashToken)) {
-  console.warn(
-    "[TIGRIS] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 미설정: 메모리 저장소로 동작하여 데이터가 유지되지 않습니다.",
-  );
+function createOrderStore(): OrderStore {
+  if (upstashUrl && upstashToken) {
+    return new UpstashOrderStore(upstashUrl, upstashToken);
+  }
+  // Vercel Lambda는 /var/task 가 읽기 전용이라 .data 디렉터리 생성(ENOENT)이 납니다.
+  if (isVercelRuntime) {
+    console.warn(
+      "[TIGRIS] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 미설정: 서버리스에서는 메모리 저장소만 사용합니다. 프로덕션에서는 반드시 Upstash를 설정하세요.",
+    );
+    return new InMemoryOrderStore();
+  }
+  return new FileBackedOrderStore(path.resolve(process.cwd(), ".data/orders.json"));
 }
 
-export const orderStore: OrderStore =
-  upstashUrl && upstashToken
-    ? new UpstashOrderStore(upstashUrl, upstashToken)
-    : new FileBackedOrderStore(path.resolve(process.cwd(), ".data/orders.json"));
+export const orderStore: OrderStore = createOrderStore();
