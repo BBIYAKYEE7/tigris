@@ -305,15 +305,32 @@ export default function Home() {
         <label htmlFor={`qty-${menuId}`} className="text-sm text-zinc-600">
           수량
         </label>
-        <input
-          id={`qty-${menuId}`}
-          type="number"
-          min={0}
-          max={99}
-          value={quantities[menuId] ?? 0}
-          onChange={(event) => setQuantity(menuId, Number(event.target.value))}
-          className="w-20 rounded-lg border border-pink-200 bg-white px-2 py-1 text-right text-sm font-semibold focus:border-pink-400 focus:outline-none"
-        />
+        <div className="flex items-center rounded-lg border border-pink-200 bg-white">
+          <button
+            type="button"
+            aria-label={`${name} 수량 감소`}
+            onClick={() => setQuantity(menuId, (quantities[menuId] ?? 0) - 1)}
+            className="h-8 w-8 rounded-l-lg text-base font-bold text-zinc-700 transition hover:bg-pink-50"
+          >
+            -
+          </button>
+          <input
+            id={`qty-${menuId}`}
+            type="text"
+            inputMode="numeric"
+            readOnly
+            value={quantities[menuId] ?? 0}
+            className="h-8 w-12 border-x border-pink-200 bg-white text-center text-sm font-semibold text-zinc-800 focus:outline-none"
+          />
+          <button
+            type="button"
+            aria-label={`${name} 수량 증가`}
+            onClick={() => setQuantity(menuId, (quantities[menuId] ?? 0) + 1)}
+            className="h-8 w-8 rounded-r-lg text-base font-bold text-zinc-700 transition hover:bg-pink-50"
+          >
+            +
+          </button>
+        </div>
       </div>
     </li>
   );
