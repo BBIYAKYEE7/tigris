@@ -109,7 +109,7 @@ class InMemoryOrderStore implements OrderStore {
 class UpstashOrderStore implements OrderStore {
   private readonly url: string;
   private readonly token: string;
-  private readonly key = "tigris:orders";
+  private readonly key = "tigris_orders";
 
   constructor(url: string, token: string) {
     this.url = url;
@@ -130,8 +130,12 @@ class UpstashOrderStore implements OrderStore {
     return (await response.json()) as T;
   }
 
+  private encodedKey() {
+    return encodeURIComponent(this.key);
+  }
+
   private async readOrders() {
-    const data = await this.request<{ result: Order[] | string | null }>("/get/tigris:orders");
+    const data = await this.request<{ result: Order[] | string | null }>(`/get/${this.encodedKey()}`);
     if (!data.result) {
       return [];
     }
@@ -146,7 +150,7 @@ class UpstashOrderStore implements OrderStore {
   }
 
   private async writeOrders(orders: Order[]) {
-    await this.request<{ result: string }>(`/set/${this.key}`, {
+    await this.request<{ result: string }>(`/set/${this.encodedKey()}`, {
       method: "POST",
       body: JSON.stringify(orders),
     });

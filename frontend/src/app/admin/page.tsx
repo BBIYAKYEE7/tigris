@@ -76,25 +76,41 @@ export default function AdminPage() {
       <section className="mx-auto max-w-5xl rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-extrabold text-pink-600">TIGRIS 관리자 화면</h1>
         <p className="mt-2 text-sm text-zinc-600">주문 메뉴와 결제 금액을 확인하고 결제완료 처리하세요.</p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start">
-          <input
-            type="password"
-            value={writeToken}
-            onChange={(event) => setWriteToken(event.target.value)}
-            placeholder="(선택) 결제완료 처리 시 ADMIN_TOKEN"
-            className="h-11 flex-1 rounded-xl border border-pink-200 px-3 text-sm focus:border-pink-400 focus:outline-none"
-          />
+        <div className="mt-4">
           <button
             type="button"
             onClick={fetchOrders}
             disabled={loading}
-            className="h-11 shrink-0 rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500 disabled:cursor-not-allowed disabled:bg-pink-300"
+            className="h-11 w-full rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500 disabled:cursor-not-allowed disabled:bg-pink-300 sm:w-auto"
           >
             {loading ? "조회 중..." : "주문 조회"}
           </button>
+          <p className="mt-2 text-xs text-zinc-500">
+            조회에는 비밀번호·토큰 입력 없이 버튼만 누르면 됩니다.
+          </p>
         </div>
-        <p className="mt-2 text-xs text-zinc-500">
-          주문 목록은 토큰 없이 조회됩니다. 서버에 ADMIN_TOKEN이 설정된 경우에만 결제완료 처리 시 위 토큰이 필요합니다.
+
+        <details className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2 text-sm text-zinc-700">
+          <summary className="cursor-pointer select-none font-medium text-zinc-800">
+            결제완료 처리가 &quot;관리자 인증 실패&quot;로 막힐 때만
+          </summary>
+          <p className="mt-2 text-xs text-zinc-600">
+            서버에 <span className="font-mono">ADMIN_TOKEN</span>이 설정된 경우에만, 아래에 같은 값을 넣은 뒤 결제완료 버튼을 누르세요.
+          </p>
+          <input
+            type="password"
+            value={writeToken}
+            onChange={(event) => setWriteToken(event.target.value)}
+            placeholder="ADMIN_TOKEN (결제완료용, 조회와 무관)"
+            className="mt-2 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm focus:border-pink-400 focus:outline-none"
+            autoComplete="off"
+          />
+        </details>
+
+        <p className="mt-3 text-xs text-zinc-500">
+          Vercel 배포 후 주문은 있는데 목록만 비면 백엔드에{" "}
+          <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_URL</span>,{" "}
+          <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_TOKEN</span>을 넣어 주세요.
         </p>
         {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
       </section>

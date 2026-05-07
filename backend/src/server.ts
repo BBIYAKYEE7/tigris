@@ -1,3 +1,4 @@
+import "./env";
 import cors from "cors";
 import express from "express";
 import { menuItems, orderStore, type OrderStatus } from "./store";
