@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type OrderItem = {
   menuId: string;
@@ -19,6 +19,7 @@ type Order = {
 };
 
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
+const POLL_MS = 4000;
 
 export default function AdminPage() {
   const apiBaseUrl =
@@ -26,25 +27,78 @@ export default function AdminPage() {
     (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "/-/backend");
   const [writeToken, setWriteToken] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const mounted = useRef(true);
 
-  const fetchOrders = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/admin/orders`);
-      const data = (await response.json()) as { orders?: Order[]; message?: string };
-      if (!response.ok || !data.orders) {
-        throw new Error(data.message ?? "주문 조회에 실패했습니다.");
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const fetchOrders = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!mounted.current) {
+        return;
       }
-      setOrders(data.orders);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "주문 조회에 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      const silent = opts?.silent ?? false;
+      if (!silent) {
+        setLoading(true);
+      }
+      setError("");
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/admin/orders`);
+        const data = (await response.json()) as { orders?: Order[]; message?: string };
+        if (!response.ok || !data.orders) {
+          throw new Error(data.message ?? "주문 조회에 실패했습니다.");
+        }
+        if (!mounted.current) {
+          return;
+        }
+        setOrders(data.orders);
+        setLastUpdatedAt(new Date());
+      } catch (err) {
+        if (!mounted.current) {
+          return;
+        }
+        if (!silent) {
+          setError(err instanceof Error ? err.message : "주문 조회에 실패했습니다.");
+        }
+      } finally {
+        if (!mounted.current) {
+          return;
+        }
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [apiBaseUrl],
+  );
+
+  useEffect(() => {
+    void fetchOrders({ silent: false });
+
+    const intervalId = window.setInterval(() => {
+      void fetchOrders({ silent: true });
+    }, POLL_MS);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void fetchOrders({ silent: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [fetchOrders]);
 
   const markPaid = async (orderId: string) => {
     setError("");
@@ -65,7 +119,7 @@ export default function AdminPage() {
       if (!response.ok) {
         throw new Error(data.message ?? "결제 상태 변경 실패");
       }
-      await fetchOrders();
+      await fetchOrders({ silent: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "결제 상태 변경 실패");
     }
@@ -76,18 +130,25 @@ export default function AdminPage() {
       <section className="mx-auto max-w-5xl rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-extrabold text-pink-600">TIGRIS 관리자 화면</h1>
         <p className="mt-2 text-sm text-zinc-600">주문 메뉴와 결제 금액을 확인하고 결제완료 처리하세요.</p>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-xs text-zinc-500">
+            {loading && orders.length === 0
+              ? "목록 불러오는 중…"
+              : `약 ${Math.round(POLL_MS / 1000)}초마다 자동 새로고침됩니다.`}
+            {lastUpdatedAt ? (
+              <span className="ml-2 text-zinc-400">
+                (마지막 갱신: {lastUpdatedAt.toLocaleTimeString("ko-KR")})
+              </span>
+            ) : null}
+          </p>
           <button
             type="button"
-            onClick={fetchOrders}
-            disabled={loading}
-            className="h-11 w-full rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500 disabled:cursor-not-allowed disabled:bg-pink-300 sm:w-auto"
+            onClick={() => void fetchOrders({ silent: orders.length > 0 })}
+            disabled={loading && orders.length === 0}
+            className="h-9 rounded-lg border border-pink-200 bg-white px-3 text-xs font-semibold text-pink-700 transition hover:bg-pink-50 disabled:opacity-50"
           >
-            {loading ? "조회 중..." : "주문 조회"}
+            지금 동기화
           </button>
-          <p className="mt-2 text-xs text-zinc-500">
-            조회에는 비밀번호·토큰 입력 없이 버튼만 누르면 됩니다.
-          </p>
         </div>
 
         <details className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2 text-sm text-zinc-700">
@@ -101,24 +162,29 @@ export default function AdminPage() {
             type="password"
             value={writeToken}
             onChange={(event) => setWriteToken(event.target.value)}
-            placeholder="ADMIN_TOKEN (결제완료용, 조회와 무관)"
+            placeholder="ADMIN_TOKEN (결제완료용)"
             className="mt-2 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm focus:border-pink-400 focus:outline-none"
             autoComplete="off"
           />
         </details>
 
         <p className="mt-3 text-xs text-zinc-500">
-          Vercel 배포 후 주문은 있는데 목록만 비면 백엔드에{" "}
+          목록이 비어 있거나 주문이 안 맞으면 백엔드에{" "}
           <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_URL</span>,{" "}
-          <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_TOKEN</span>을 넣어 주세요.
+          <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_TOKEN</span> 설정을 확인하세요.
         </p>
         {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
       </section>
 
       <section className="mx-auto mt-4 max-w-5xl space-y-3">
-        {orders.length === 0 ? (
+        {loading && orders.length === 0 ? (
           <div className="rounded-2xl border border-pink-100 bg-white p-4 text-sm text-zinc-600">
-            조회된 주문이 없습니다.
+            주문 목록을 불러오는 중입니다…
+          </div>
+        ) : null}
+        {!loading && orders.length === 0 ? (
+          <div className="rounded-2xl border border-pink-100 bg-white p-4 text-sm text-zinc-600">
+            접수된 주문이 없습니다.
           </div>
         ) : null}
         {orders.map((order) => (
