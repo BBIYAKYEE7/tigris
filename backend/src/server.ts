@@ -1,6 +1,7 @@
 import "./env";
 import cors from "cors";
 import express from "express";
+import path from "node:path";
 import { menuItems, orderStore, type OrderStatus } from "./store";
 
 const app = express();
@@ -13,6 +14,7 @@ app.use(
   }),
 );
 app.use(express.json());
+app.use("/audio", express.static(path.resolve(process.cwd(), "../admin/public/audio")));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });

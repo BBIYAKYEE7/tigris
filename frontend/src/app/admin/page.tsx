@@ -62,10 +62,10 @@ export default function AdminPage() {
     if (!justOpened) {
       return;
     }
-    const alertAudio = new Audio("/audio/alert.mp3");
+    const alertAudio = new Audio(`${apiBaseUrl}/audio/alert.mp3`);
     alertAudio.volume = 0.9;
     void alertAudio.play();
-  }, [alertOpen]);
+  }, [alertOpen, apiBaseUrl]);
 
   const fetchOrders = useCallback(
     async (opts?: { silent?: boolean }) => {

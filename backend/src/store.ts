@@ -1,3 +1,6 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+
 export type MenuItem = {
   id: string;
   name: string;
@@ -106,6 +109,68 @@ class InMemoryOrderStore implements OrderStore {
   }
 }
 
+class FileBackedOrderStore implements OrderStore {
+  private orders: Order[] = [];
+  private readonly filePath: string;
+  private loaded = false;
+  private writeQueue: Promise<void> = Promise.resolve();
+
+  constructor(filePath: string) {
+    this.filePath = filePath;
+  }
+
+  private async ensureLoaded() {
+    if (this.loaded) {
+      return;
+    }
+    try {
+      const raw = await fs.readFile(this.filePath, "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        this.orders = parsed as Order[];
+      } else {
+        this.orders = [];
+      }
+    } catch {
+      this.orders = [];
+    } finally {
+      this.loaded = true;
+    }
+  }
+
+  private async persist() {
+    this.writeQueue = this.writeQueue.then(async () => {
+      await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+      await fs.writeFile(this.filePath, JSON.stringify(this.orders), "utf8");
+    });
+    await this.writeQueue;
+  }
+
+  async listOrders() {
+    await this.ensureLoaded();
+    return this.orders;
+  }
+
+  async createOrder(customerName: string, quantities: Record<string, number>) {
+    await this.ensureLoaded();
+    const order = createOrderPayload(customerName, quantities);
+    this.orders.unshift(order);
+    await this.persist();
+    return order;
+  }
+
+  async updateOrderStatus(id: string, status: OrderStatus) {
+    await this.ensureLoaded();
+    const target = this.orders.find((order) => order.id === id);
+    if (!target) {
+      throw new Error("주문을 찾을 수 없습니다.");
+    }
+    target.status = status;
+    await this.persist();
+    return target;
+  }
+}
+
 class UpstashOrderStore implements OrderStore {
   private readonly url: string;
   private readonly token: string;
@@ -193,4 +258,4 @@ if (isVercelRuntime && (!upstashUrl || !upstashToken)) {
 export const orderStore: OrderStore =
   upstashUrl && upstashToken
     ? new UpstashOrderStore(upstashUrl, upstashToken)
-    : new InMemoryOrderStore();
+    : new FileBackedOrderStore(path.resolve(process.cwd(), ".data/orders.json"));
