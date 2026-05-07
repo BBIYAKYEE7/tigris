@@ -62,43 +62,9 @@ export default function AdminPage() {
     if (!justOpened) {
       return;
     }
-
-    const playFallbackBeep = () => {
-      const AudioCtx =
-        typeof window !== "undefined"
-          ? window.AudioContext ||
-            (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-          : undefined;
-      if (!AudioCtx) {
-        return;
-      }
-      const ctx = new AudioCtx();
-      const now = ctx.currentTime;
-      const playBeep = (freq: number, start: number, duration: number, gainValue: number) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(gainValue, start + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(start);
-        osc.stop(start + duration + 0.03);
-      };
-      playBeep(880, now, 0.16, 0.12);
-      playBeep(1174, now + 0.2, 0.22, 0.1);
-      window.setTimeout(() => {
-        void ctx.close();
-      }, 900);
-    };
-
     const alertAudio = new Audio("/audio/alert.mp3");
     alertAudio.volume = 0.9;
-    void alertAudio.play().catch(() => {
-      playFallbackBeep();
-    });
+    void alertAudio.play();
   }, [alertOpen]);
 
   const fetchOrders = useCallback(
