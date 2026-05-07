@@ -75,15 +75,13 @@ function describeFetchFailure(error: unknown): string {
     return "네트워크 오류가 발생했습니다.";
   }
   if (error.message === "Failed to fetch") {
-    return "서버에 연결하지 못했습니다. 사이트 주소가 맞는지, Vercel 배포가 성공했는지 확인하고, 환경 변수 NEXT_PUBLIC_API_BASE_URL에 localhost 같은 값이 들어가 있지 않은지 확인해 주세요.";
+    return "서버에 연결하지 못했습니다. Vercel 배포가 성공했는지 `/api/health`를 열어보고, 환경 변수 `NEXT_PUBLIC_API_BASE_URL`에 localhost 등 잘못된 값이 없는지 확인해 주세요. 주문 API는 같은 도메인의 `/api`입니다.";
   }
   return error.message;
 }
 
 export default function Home() {
-  const apiBaseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "/-/backend");
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   const mounted = useRef(true);
 
   const [activeTableNum, setActiveTableNum] = useState<number | null>(null);

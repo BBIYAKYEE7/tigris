@@ -33,13 +33,11 @@ type TablePendingSummary = {
 
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
-/** 알림음은 Next `public/audio/`에서 제공 (Vercel 백엔드 번들에는 정적 mp3가 없음). */
+/** 알림음은 Next `public/audio/`에서 제공합니다. */
 const ALERT_SOUND_SRC = "/audio/alert.mp3";
 
 export default function AdminPage() {
-  const apiBaseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "/-/backend");
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   const [writeToken, setWriteToken] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -334,14 +332,14 @@ export default function AdminPage() {
         </details>
 
         <p className="mt-3 text-xs text-zinc-500">
-          목록이 비어 있거나 주문이 안 맞으면 백엔드에{" "}
+          목록이 비어 있거나 주문이 안 맞으면 Vercel 프로젝트 환경 변수에{" "}
           <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_URL</span>,{" "}
           <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_TOKEN</span> 설정을 확인하세요.
         </p>
         {splitBrainWarning ? (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
             서버가 공유 저장소 없이 동작 중입니다. 요청마다 다른 컴퓨터가 응답하면 주문 목록이 비었다가
-            다시 보입니다. Vercel 백엔드에 위 Upstash 환경 변수를 넣어 주세요.
+            다시 보입니다. 같은 프로젝트에 아래 Upstash 환경 변수를 넣어 주세요.
           </p>
         ) : null}
         {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}

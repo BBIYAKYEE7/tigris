@@ -2,10 +2,9 @@
   "name": "tigris-monorepo-runner",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n frontend,admin,backend -c magenta,cyan,green \"npm --prefix frontend run dev -- --port 3000\" \"npm --prefix admin run dev -- --port 3001\" \"npm --prefix backend run dev\"",
+    "dev": "npm --prefix frontend run dev -- --port 3000",
     "dev:frontend": "npm --prefix frontend run dev -- --port 3000",
-    "dev:admin": "npm --prefix admin run dev -- --port 3001",
-    "dev:backend": "npm --prefix backend run dev"
+    "dev:admin": "npm --prefix admin run dev -- --port 3001"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
