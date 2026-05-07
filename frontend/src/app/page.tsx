@@ -118,6 +118,36 @@ export default function Home() {
     }
   }, []);
 
+  const pingTableGuestPresence = useCallback(
+    async (tableNum: number) => {
+      try {
+        await fetch(`${apiBaseUrl}/api/tables/presence`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tableNum }),
+        });
+      } catch {
+        /* 무시: 주문 목록은 그대로 표시 */
+      }
+    },
+    [apiBaseUrl],
+  );
+
+  const clearTableGuestPresence = useCallback(
+    async (tableNum: number) => {
+      try {
+        await fetch(`${apiBaseUrl}/api/tables/presence`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tableNum }),
+        });
+      } catch {
+        /* 무시 */
+      }
+    },
+    [apiBaseUrl],
+  );
+
   const fetchTableOrders = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (activeTableNum === null) {
@@ -125,6 +155,7 @@ export default function Home() {
         return;
       }
       const silent = opts?.silent ?? false;
+      const tableNumForPing = activeTableNum;
       if (!silent) {
         setTableOrdersLoading(true);
       }
@@ -139,6 +170,7 @@ export default function Home() {
           return;
         }
         setTableOrders(data.orders);
+        void pingTableGuestPresence(tableNumForPing);
       } catch (e) {
         if (!mounted.current) {
           return;
@@ -153,7 +185,7 @@ export default function Home() {
         }
       }
     },
-    [apiBaseUrl, activeTableNum],
+    [apiBaseUrl, activeTableNum, pingTableGuestPresence],
   );
 
   useEffect(() => {
@@ -193,8 +225,13 @@ export default function Home() {
       setTablePickerError("1~999 사이 테이블 번호를 입력해 주세요.");
       return;
     }
+    const prev = activeTableNum;
+    if (prev !== null && prev !== n) {
+      void clearTableGuestPresence(prev);
+    }
     writeSessionTable(n);
     setActiveTableNum(n);
+    void pingTableGuestPresence(n);
   };
 
   const resetTableNumber = () => {
@@ -202,6 +239,10 @@ export default function Home() {
     if (tableLocked) {
       setTableLockError("결제대기 주문이 있어 테이블 번호를 초기화할 수 없습니다. 결제 완료 후 다시 시도해 주세요.");
       return;
+    }
+    const prev = activeTableNum;
+    if (prev !== null) {
+      void clearTableGuestPresence(prev);
     }
     clearSessionTable();
     setActiveTableNum(null);

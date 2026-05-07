@@ -33,7 +33,7 @@ type TablePendingSummary = {
 
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
-/** 알림음은 Next `public/audio/`에서 제공합니다. */
+/** `frontend/public/audio/alert.mp3` → 브라우저에서는 `/audio/alert.mp3` */
 const ALERT_SOUND_SRC = "/audio/alert.mp3";
 
 export default function AdminPage() {
@@ -49,6 +49,7 @@ export default function AdminPage() {
   const alertAudioRef = useRef<HTMLAudioElement | null>(null);
   const [alertOrder, setAlertOrder] = useState<Order | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
+  const [guestActiveTables, setGuestActiveTables] = useState<Set<number>>(() => new Set());
 
   useEffect(() => {
     mounted.current = true;
@@ -92,13 +93,46 @@ export default function AdminPage() {
   }, []);
 
   const playAlertSound = useCallback(() => {
-    const audio = alertAudioRef.current;
-    if (!audio) {
+    const src = ALERT_SOUND_SRC;
+    const play = (el: HTMLAudioElement) => {
+      el.currentTime = 0;
+      return el.play();
+    };
+    const pooled = alertAudioRef.current;
+    if (pooled) {
+      void play(pooled).catch(() => {
+        const oneShot = new Audio(src);
+        oneShot.volume = 0.9;
+        void oneShot.play().catch(() => {});
+      });
       return;
     }
-    audio.currentTime = 0;
-    void audio.play().catch(() => {});
+    const oneShot = new Audio(src);
+    oneShot.volume = 0.9;
+    void oneShot.play().catch(() => {});
   }, []);
+
+  const refreshTableGuestPresence = useCallback(async () => {
+    try {
+      const r = await fetch(`${apiBaseUrl}/api/admin/table-presence?_=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
+      const j = (await r.json()) as { activeTables?: { tableNum: number }[] };
+      if (!r.ok || !Array.isArray(j.activeTables)) {
+        return;
+      }
+      if (!mounted.current) {
+        return;
+      }
+      setGuestActiveTables(new Set(j.activeTables.map((x) => x.tableNum)));
+    } catch {
+      /* ignore */
+    }
+  }, [apiBaseUrl]);
 
   const fetchOrders = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -188,9 +222,10 @@ export default function AdminPage() {
         if (!silent) {
           setLoading(false);
         }
+        void refreshTableGuestPresence();
       }
     },
-    [apiBaseUrl, playAlertSound],
+    [apiBaseUrl, playAlertSound, refreshTableGuestPresence],
   );
 
   useEffect(() => {
@@ -324,8 +359,9 @@ export default function AdminPage() {
         <div className="rounded-2xl border border-pink-100 bg-white p-4 text-sm text-zinc-700">
           <h2 className="text-base font-bold text-pink-700">테이블별 주문 현황</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            1~27번 테이블 기준으로, 각 테이블의 가장 최근{" "}
-            <span className="font-semibold">결제대기 주문</span>을 보여줍니다.
+            손님이 메뉴판에서 테이블 번호를 적용하면{" "}
+            <span className="font-semibold text-sky-800">손님 이용중</span>으로 표시됩니다. 결제대기 주문이 있으면
+            함께 표시됩니다.
           </p>
           {loading && orders.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-600">주문 목록을 불러오는 중입니다…</p>
@@ -341,24 +377,32 @@ export default function AdminPage() {
           {Array.from({ length: TABLE_COUNT }, (_, index) => {
             const tableNum = index + 1;
             const summary = pendingSummaryByTable(tableNum);
+            const guestHere = guestActiveTables.has(tableNum);
             return (
               <article
                 key={tableNum}
                 className="flex flex-col rounded-2xl border border-pink-100 bg-white p-3 text-sm shadow-sm"
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-start justify-between gap-2">
                   <h3 className="text-sm font-bold text-pink-700">
                     {tableNum}번 테이블
                   </h3>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      summary
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-zinc-100 text-zinc-500"
-                    }`}
-                  >
-                    {summary ? `결제대기 ${summary.pendingOrders.length}건` : "주문 없음"}
-                  </span>
+                  <div className="flex max-w-[min(100%,11rem)] flex-wrap justify-end gap-1">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                        summary
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-zinc-100 text-zinc-500"
+                      }`}
+                    >
+                      {summary ? `결제대기 ${summary.pendingOrders.length}건` : "주문 없음"}
+                    </span>
+                    {guestHere ? (
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-900">
+                        손님 이용중
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 {summary ? (
                   <>
@@ -386,7 +430,9 @@ export default function AdminPage() {
                   </>
                 ) : (
                   <p className="mt-2 grow text-xs text-zinc-500">
-                    결제 대기 중인 주문이 없습니다.
+                    {guestHere
+                      ? "결제 대기 주문은 없습니다. 손님이 메뉴판에서 이 테이블을 연 상태입니다."
+                      : "결제 대기 중인 주문이 없습니다."}
                   </p>
                 )}
               </article>
