@@ -23,8 +23,8 @@ const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 export default function Home() {
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ??
-    (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "");
-  const [token, setToken] = useState("");
+    (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "/-/backend");
+  const [writeToken, setWriteToken] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,9 +33,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/admin/orders`, {
-        headers: { "x-admin-token": token },
-      });
+      const response = await fetch(`${apiBaseUrl}/api/admin/orders`);
       const data = (await response.json()) as { orders?: Order[]; message?: string };
       if (!response.ok || !data.orders) {
         throw new Error(data.message ?? "주문 조회에 실패했습니다.");
@@ -51,12 +49,16 @@ export default function Home() {
   const markPaid = async (orderId: string) => {
     setError("");
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (writeToken) {
+        headers["x-admin-token"] = writeToken;
+      }
+
       const response = await fetch(`${apiBaseUrl}/api/admin/orders/${orderId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-token": token,
-        },
+        headers,
         body: JSON.stringify({ status: "PAID" }),
       });
       const data = (await response.json()) as { message?: string };
@@ -74,23 +76,26 @@ export default function Home() {
       <section className="mx-auto max-w-5xl rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-extrabold text-pink-600">TIGRIS 관리자 화면</h1>
         <p className="mt-2 text-sm text-zinc-600">주문 메뉴와 결제 금액을 확인하고 결제완료 처리하세요.</p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start">
           <input
             type="password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="ADMIN_TOKEN 입력"
+            value={writeToken}
+            onChange={(event) => setWriteToken(event.target.value)}
+            placeholder="(선택) 결제완료 처리 시 ADMIN_TOKEN"
             className="h-11 flex-1 rounded-xl border border-pink-200 px-3 text-sm focus:border-pink-400 focus:outline-none"
           />
           <button
             type="button"
             onClick={fetchOrders}
-            disabled={loading || !token}
-            className="h-11 rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500 disabled:cursor-not-allowed disabled:bg-pink-300"
+            disabled={loading}
+            className="h-11 shrink-0 rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500 disabled:cursor-not-allowed disabled:bg-pink-300"
           >
             {loading ? "조회 중..." : "주문 조회"}
           </button>
         </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          주문 목록은 토큰 없이 조회됩니다. 서버에 ADMIN_TOKEN이 설정된 경우에만 결제완료 처리 시 위 토큰이 필요합니다.
+        </p>
         {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
       </section>
 

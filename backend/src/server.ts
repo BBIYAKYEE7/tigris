@@ -32,9 +32,9 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
-const validateAdmin = (requestToken: string | undefined) => {
+const validateAdminWrite = (requestToken: string | undefined) => {
   if (!adminToken) {
-    return "서버 ADMIN_TOKEN이 설정되지 않았습니다.";
+    return null;
   }
   if (requestToken !== adminToken) {
     return "관리자 인증 실패";
@@ -42,18 +42,13 @@ const validateAdmin = (requestToken: string | undefined) => {
   return null;
 };
 
-app.get("/api/admin/orders", async (req, res) => {
-  const authError = validateAdmin(req.header("x-admin-token"));
-  if (authError) {
-    res.status(401).json({ message: authError });
-    return;
-  }
+app.get("/api/admin/orders", async (_req, res) => {
   const orders = await orderStore.listOrders();
   res.json({ orders });
 });
 
 app.patch("/api/admin/orders/:id", async (req, res) => {
-  const authError = validateAdmin(req.header("x-admin-token"));
+  const authError = validateAdminWrite(req.header("x-admin-token"));
   if (authError) {
     res.status(401).json({ message: authError });
     return;
