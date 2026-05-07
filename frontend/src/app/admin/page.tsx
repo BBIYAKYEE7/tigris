@@ -112,6 +112,32 @@ export default function AdminPage() {
     void oneShot.play().catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!alertOpen || !alertOrder) {
+      return;
+    }
+    let cancelled = false;
+    const run = () => {
+      if (cancelled || !mounted.current) {
+        return;
+      }
+      requestAnimationFrame(() => {
+        if (cancelled || !mounted.current) {
+          return;
+        }
+        playAlertSound();
+      });
+    };
+    if (typeof queueMicrotask === "function") {
+      queueMicrotask(run);
+    } else {
+      window.setTimeout(run, 0);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [alertOpen, alertOrder?.id, playAlertSound]);
+
   const refreshTableGuestPresence = useCallback(async () => {
     try {
       const r = await fetch(`${apiBaseUrl}/api/admin/table-presence?_=${Date.now()}`, {
@@ -203,7 +229,6 @@ export default function AdminPage() {
           (order) => order.status === "PENDING" && !prevIds.has(order.id),
         );
         if (newPending) {
-          playAlertSound();
           setAlertOrder(newPending);
           setAlertOpen(true);
         }
@@ -225,7 +250,7 @@ export default function AdminPage() {
         void refreshTableGuestPresence();
       }
     },
-    [apiBaseUrl, playAlertSound, refreshTableGuestPresence],
+    [apiBaseUrl, refreshTableGuestPresence],
   );
 
   useEffect(() => {
