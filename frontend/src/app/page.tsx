@@ -490,14 +490,14 @@ export default function Home() {
 
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
-            <h2 className="text-xl font-bold text-pink-600">기본 메뉴</h2>
+            <h2 className="text-xl font-bold text-pink-600">🍽️ 기본 메뉴</h2>
             <ul className="mt-4 space-y-3">
               {basicMenu.map((item) => renderMenuCard(item.id, item.name, item.price))}
             </ul>
           </article>
 
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
-            <h2 className="text-xl font-bold text-pink-600">티그리스 세트</h2>
+            <h2 className="text-xl font-bold text-pink-600">🎁 티그리스 세트</h2>
             <ul className="mt-4 space-y-3">
               {specialMenu.map((item) =>
                 renderMenuCard(item.id, item.name, item.price, item.description),
@@ -506,7 +506,7 @@ export default function Home() {
           </article>
 
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
-            <h2 className="text-xl font-bold text-pink-600">음료 & 기타</h2>
+            <h2 className="text-xl font-bold text-pink-600">🥤 음료 & 기타</h2>
             <ul className="mt-4 space-y-3">
               {drinksAndExtras.map((item) => renderMenuCard(item.id, item.name, item.price))}
             </ul>
