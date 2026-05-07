@@ -14,7 +14,7 @@ app.use(
   }),
 );
 app.use(express.json());
-app.use("/audio", express.static(path.resolve(process.cwd(), "../admin/public/audio")));
+app.use("/audio", express.static(path.resolve(process.cwd(), "audio")));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });

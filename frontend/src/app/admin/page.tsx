@@ -33,6 +33,8 @@ type TablePendingSummary = {
 
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
+/** 알림음은 Next `public/audio/`에서 제공 (Vercel 백엔드 번들에는 정적 mp3가 없음). */
+const ALERT_SOUND_SRC = "/audio/alert.mp3";
 
 export default function AdminPage() {
   const apiBaseUrl =
@@ -57,8 +59,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    const url = `${apiBaseUrl}/audio/alert.mp3`;
-    const audio = new Audio(url);
+    const audio = new Audio(ALERT_SOUND_SRC);
     audio.preload = "auto";
     audio.volume = 0.9;
     alertAudioRef.current = audio;
@@ -66,7 +67,7 @@ export default function AdminPage() {
       audio.pause();
       alertAudioRef.current = null;
     };
-  }, [apiBaseUrl]);
+  }, []);
 
   useEffect(() => {
     const unlock = () => {
