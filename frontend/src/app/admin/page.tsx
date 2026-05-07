@@ -45,7 +45,9 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [splitBrainWarning, setSplitBrainWarning] = useState(false);
   const mounted = useRef(true);
+  const fetchSeqRef = useRef(0);
   const previousOrdersRef = useRef<Order[]>([]);
   const alertAudioRef = useRef<HTMLAudioElement | null>(null);
   const [alertOrder, setAlertOrder] = useState<Order | null>(null);
@@ -107,12 +109,14 @@ export default function AdminPage() {
         return;
       }
       const silent = opts?.silent ?? false;
+      const seq = ++fetchSeqRef.current;
       if (!silent) {
         setLoading(true);
       }
       setError("");
       try {
-        const response = await fetch(`${apiBaseUrl}/api/admin/orders`, {
+        const url = `${apiBaseUrl}/api/admin/orders?_=${Date.now()}`;
+        const response = await fetch(url, {
           cache: "no-store",
           headers: {
             "Cache-Control": "no-cache",
@@ -123,11 +127,44 @@ export default function AdminPage() {
         if (!response.ok || !Array.isArray(data.orders)) {
           throw new Error(data.message ?? "주문 조회에 실패했습니다.");
         }
-        if (!mounted.current) {
+        if (response.headers.get("X-Tigris-Orders-Split-Brain") === "1") {
+          setSplitBrainWarning(true);
+        } else {
+          setSplitBrainWarning(false);
+        }
+
+        let nextOrders = data.orders;
+        const prevOrders = previousOrdersRef.current;
+
+        if (
+          silent &&
+          prevOrders.length > 0 &&
+          nextOrders.length === 0 &&
+          seq === fetchSeqRef.current
+        ) {
+          const retryUrl = `${apiBaseUrl}/api/admin/orders?_=${Date.now()}`;
+          const retryRes = await fetch(retryUrl, {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
+            },
+          });
+          const retryData = (await retryRes.json()) as { orders?: Order[]; message?: string };
+          if (
+            retryRes.ok &&
+            Array.isArray(retryData.orders) &&
+            retryData.orders.length > 0 &&
+            seq === fetchSeqRef.current
+          ) {
+            nextOrders = retryData.orders;
+          }
+        }
+
+        if (!mounted.current || seq !== fetchSeqRef.current) {
           return;
         }
-        const nextOrders = data.orders;
-        const prevOrders = previousOrdersRef.current;
+
         setOrders(nextOrders);
         previousOrdersRef.current = nextOrders;
         const prevIds = new Set(prevOrders.map((o) => o.id));
@@ -301,6 +338,12 @@ export default function AdminPage() {
           <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_URL</span>,{" "}
           <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_TOKEN</span> 설정을 확인하세요.
         </p>
+        {splitBrainWarning ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            서버가 공유 저장소 없이 동작 중입니다. 요청마다 다른 컴퓨터가 응답하면 주문 목록이 비었다가
+            다시 보입니다. Vercel 백엔드에 위 Upstash 환경 변수를 넣어 주세요.
+          </p>
+        ) : null}
         {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
       </section>
 

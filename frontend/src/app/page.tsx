@@ -70,6 +70,16 @@ function clearSessionTable() {
   window.sessionStorage.removeItem(ACTIVE_TABLE_SESSION);
 }
 
+function describeFetchFailure(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "네트워크 오류가 발생했습니다.";
+  }
+  if (error.message === "Failed to fetch") {
+    return "서버에 연결하지 못했습니다. 사이트 주소가 맞는지, Vercel 배포가 성공했는지 확인하고, 환경 변수 NEXT_PUBLIC_API_BASE_URL에 localhost 같은 값이 들어가 있지 않은지 확인해 주세요.";
+  }
+  return error.message;
+}
+
 export default function Home() {
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ??
@@ -135,7 +145,7 @@ export default function Home() {
         if (!mounted.current) {
           return;
         }
-        setTableOrdersError(e instanceof Error ? e.message : "테이블 주문을 불러오지 못했습니다.");
+        setTableOrdersError(describeFetchFailure(e));
       } finally {
         if (!mounted.current) {
           return;
@@ -285,7 +295,7 @@ export default function Home() {
       closeModal();
       void fetchTableOrders({ silent: true });
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "주문 처리 중 오류가 발생했습니다.");
+      setSubmitError(describeFetchFailure(error));
     } finally {
       setIsSubmitting(false);
     }

@@ -264,3 +264,7 @@ function createOrderStore(): OrderStore {
 }
 
 export const orderStore: OrderStore = createOrderStore();
+
+/** Vercel에서 Upstash 미설정 시 인스턴스마다 메모리가 달라 주문 목록이 번갈아 비는 현상이 납니다. */
+export const ordersPersistenceSplitBrain =
+  isVercelRuntime && !(upstashUrl && upstashToken);

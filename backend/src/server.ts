@@ -2,7 +2,7 @@ import "./env";
 import cors from "cors";
 import express from "express";
 import path from "node:path";
-import { menuItems, orderStore, type OrderStatus } from "./store";
+import { menuItems, orderStore, ordersPersistenceSplitBrain, type OrderStatus } from "./store";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -61,6 +61,9 @@ const validateAdminWrite = (requestToken: string | undefined) => {
 
 app.get("/api/admin/orders", async (_req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
+  if (ordersPersistenceSplitBrain) {
+    res.setHeader("X-Tigris-Orders-Split-Brain", "1");
+  }
   const orders = await orderStore.listOrders();
   res.json({ orders });
 });
