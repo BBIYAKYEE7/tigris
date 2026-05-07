@@ -85,13 +85,16 @@ class InMemoryOrderStore implements OrderStore {
 class UpstashOrderStore implements OrderStore {
   private readonly key = "tigris_orders";
 
-  constructor(
-    private readonly url: string,
-    private readonly token: string,
-  ) {}
+  constructor(url: string, token: string) {
+    this.baseUrl = url.replace(/\/$/, "");
+    this.token = token;
+  }
+
+  private readonly baseUrl: string;
+  private readonly token: string;
 
   private async request<T>(path: string, init?: RequestInit) {
-    const response = await fetch(`${this.url}${path}`, {
+    const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
         Authorization: `Bearer ${this.token}`,

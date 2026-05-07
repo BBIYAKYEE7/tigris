@@ -38,7 +38,6 @@ const ALERT_SOUND_SRC = "/audio/alert.mp3";
 
 export default function AdminPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-  const [writeToken, setWriteToken] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -256,17 +255,10 @@ export default function AdminPage() {
     }
     setError("");
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (writeToken) {
-        headers["x-admin-token"] = writeToken;
-      }
-
       for (const orderId of orderIds) {
         const response = await fetch(`${apiBaseUrl}/api/admin/orders/${orderId}`, {
           method: "PATCH",
-          headers,
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "PAID" }),
         });
         const data = (await response.json()) as { message?: string };
@@ -313,23 +305,6 @@ export default function AdminPage() {
             지금 동기화
           </button>
         </div>
-
-        <details className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2 text-sm text-zinc-700">
-          <summary className="cursor-pointer select-none font-medium text-zinc-800">
-            결제완료 처리가 &quot;관리자 인증 실패&quot;로 막힐 때만
-          </summary>
-          <p className="mt-2 text-xs text-zinc-600">
-            서버에 <span className="font-mono">ADMIN_TOKEN</span>이 설정된 경우에만, 아래에 같은 값을 넣은 뒤 결제완료 버튼을 누르세요.
-          </p>
-          <input
-            type="password"
-            value={writeToken}
-            onChange={(event) => setWriteToken(event.target.value)}
-            placeholder="ADMIN_TOKEN (결제완료용)"
-            className="mt-2 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm focus:border-pink-400 focus:outline-none"
-            autoComplete="off"
-          />
-        </details>
 
         <p className="mt-3 text-xs text-zinc-500">
           목록이 비어 있거나 주문이 안 맞으면 Vercel 프로젝트 환경 변수에{" "}
