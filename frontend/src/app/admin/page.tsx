@@ -45,9 +45,9 @@ export default function AdminPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const mounted = useRef(true);
   const previousOrdersRef = useRef<Order[]>([]);
+  const alertAudioRef = useRef<HTMLAudioElement | null>(null);
   const [alertOrder, setAlertOrder] = useState<Order | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
-  const prevAlertOpenRef = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -57,15 +57,48 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    const justOpened = alertOpen && !prevAlertOpenRef.current;
-    prevAlertOpenRef.current = alertOpen;
-    if (!justOpened) {
+    const url = `${apiBaseUrl}/audio/alert.mp3`;
+    const audio = new Audio(url);
+    audio.preload = "auto";
+    audio.volume = 0.9;
+    alertAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      alertAudioRef.current = null;
+    };
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    const unlock = () => {
+      const audio = alertAudioRef.current;
+      if (!audio) {
+        return;
+      }
+      const prevVolume = audio.volume;
+      audio.volume = 0;
+      void audio
+        .play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.volume = prevVolume;
+        })
+        .catch(() => {
+          audio.volume = prevVolume;
+        });
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
+
+  const playAlertSound = useCallback(() => {
+    const audio = alertAudioRef.current;
+    if (!audio) {
       return;
     }
-    const alertAudio = new Audio(`${apiBaseUrl}/audio/alert.mp3`);
-    alertAudio.volume = 0.9;
-    void alertAudio.play();
-  }, [alertOpen, apiBaseUrl]);
+    audio.currentTime = 0;
+    void audio.play().catch(() => {});
+  }, []);
 
   const fetchOrders = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -90,16 +123,14 @@ export default function AdminPage() {
         const prevOrders = previousOrdersRef.current;
         setOrders(nextOrders);
         previousOrdersRef.current = nextOrders;
-        // 새로 들어온 결제대기 주문 감지 → 알림 모달
-        if (!alertOpen) {
-          const prevIds = new Set(prevOrders.map((o) => o.id));
-          const newPending = nextOrders.find(
-            (order) => order.status === "PENDING" && !prevIds.has(order.id),
-          );
-          if (newPending) {
-            setAlertOrder(newPending);
-            setAlertOpen(true);
-          }
+        const prevIds = new Set(prevOrders.map((o) => o.id));
+        const newPending = nextOrders.find(
+          (order) => order.status === "PENDING" && !prevIds.has(order.id),
+        );
+        if (newPending) {
+          playAlertSound();
+          setAlertOrder(newPending);
+          setAlertOpen(true);
         }
         setLastUpdatedAt(new Date());
       } catch (err) {
@@ -118,7 +149,7 @@ export default function AdminPage() {
         }
       }
     },
-    [apiBaseUrl],
+    [apiBaseUrl, playAlertSound],
   );
 
   useEffect(() => {
