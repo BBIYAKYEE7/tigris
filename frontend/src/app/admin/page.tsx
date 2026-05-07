@@ -18,6 +18,19 @@ type Order = {
   items: OrderItem[];
 };
 
+type TablePendingSummary = {
+  tableNum: number;
+  pendingOrders: Order[];
+  totalAmount: number;
+  latestCreatedAt: string;
+  mergedItems: Array<{
+    menuId: string;
+    name: string;
+    quantity: number;
+    lineTotal: number;
+  }>;
+};
+
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
 
@@ -34,6 +47,7 @@ export default function AdminPage() {
   const previousOrdersRef = useRef<Order[]>([]);
   const [alertOrder, setAlertOrder] = useState<Order | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
+  const prevAlertOpenRef = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -41,6 +55,42 @@ export default function AdminPage() {
       mounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const justOpened = alertOpen && !prevAlertOpenRef.current;
+    prevAlertOpenRef.current = alertOpen;
+    if (!justOpened) {
+      return;
+    }
+    const AudioCtx =
+      typeof window !== "undefined"
+        ? window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        : undefined;
+    if (!AudioCtx) {
+      return;
+    }
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const playBeep = (freq: number, start: number, duration: number, gainValue: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(gainValue, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + duration + 0.03);
+    };
+    // 짧은 2회 비프음
+    playBeep(880, now, 0.16, 0.12);
+    playBeep(1174, now + 0.2, 0.22, 0.1);
+    window.setTimeout(() => {
+      void ctx.close();
+    }, 900);
+  }, [alertOpen]);
 
   const fetchOrders = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -119,23 +169,43 @@ export default function AdminPage() {
 
   const TABLE_COUNT = 27;
 
-  const latestPendingOrderByTable = (tableNum: number) => {
+  const pendingSummaryByTable = (tableNum: number): TablePendingSummary | null => {
     const label = `${tableNum}번 테이블`;
-    const candidates = orders.filter(
+    const pendingOrders = orders.filter(
       (order) => order.customerName === label && order.status === "PENDING",
     );
-    if (candidates.length === 0) {
+    if (pendingOrders.length === 0) {
       return null;
     }
-    return candidates
+    const sorted = pendingOrders
       .slice()
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      )[0];
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const mergedItemMap = new Map<string, { menuId: string; name: string; quantity: number; lineTotal: number }>();
+    for (const order of sorted) {
+      for (const item of order.items) {
+        const key = item.menuId;
+        const prev = mergedItemMap.get(key);
+        if (!prev) {
+          mergedItemMap.set(key, { ...item });
+          continue;
+        }
+        prev.quantity += item.quantity;
+        prev.lineTotal += item.lineTotal;
+      }
+    }
+    return {
+      tableNum,
+      pendingOrders: sorted,
+      totalAmount: sorted.reduce((sum, order) => sum + order.totalAmount, 0),
+      latestCreatedAt: sorted[0].createdAt,
+      mergedItems: Array.from(mergedItemMap.values()),
+    };
   };
 
-  const markPaid = async (orderId: string) => {
+  const markOrdersPaid = async (orderIds: string[]) => {
+    if (orderIds.length === 0) {
+      return;
+    }
     setError("");
     try {
       const headers: Record<string, string> = {
@@ -145,19 +215,29 @@ export default function AdminPage() {
         headers["x-admin-token"] = writeToken;
       }
 
-      const response = await fetch(`${apiBaseUrl}/api/admin/orders/${orderId}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ status: "PAID" }),
-      });
-      const data = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        throw new Error(data.message ?? "결제 상태 변경 실패");
+      for (const orderId of orderIds) {
+        const response = await fetch(`${apiBaseUrl}/api/admin/orders/${orderId}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ status: "PAID" }),
+        });
+        const data = (await response.json()) as { message?: string };
+        if (!response.ok) {
+          throw new Error(data.message ?? "결제 상태 변경 실패");
+        }
       }
       await fetchOrders({ silent: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "결제 상태 변경 실패");
     }
+  };
+
+  const markTablePaid = async (tableNum: number) => {
+    const summary = pendingSummaryByTable(tableNum);
+    if (!summary) {
+      return;
+    }
+    await markOrdersPaid(summary.pendingOrders.map((order) => order.id));
   };
 
   return (
@@ -231,7 +311,7 @@ export default function AdminPage() {
         <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: TABLE_COUNT }, (_, index) => {
             const tableNum = index + 1;
-            const latest = latestPendingOrderByTable(tableNum);
+            const summary = pendingSummaryByTable(tableNum);
             return (
               <article
                 key={tableNum}
@@ -243,36 +323,36 @@ export default function AdminPage() {
                   </h3>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      latest
+                      summary
                         ? "bg-amber-100 text-amber-800"
                         : "bg-zinc-100 text-zinc-500"
                     }`}
                   >
-                    {latest ? "결제대기" : "주문 없음"}
+                    {summary ? `결제대기 ${summary.pendingOrders.length}건` : "주문 없음"}
                   </span>
                 </div>
-                {latest ? (
+                {summary ? (
                   <>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {new Date(latest.createdAt).toLocaleTimeString("ko-KR")}
+                      최근 주문: {new Date(summary.latestCreatedAt).toLocaleTimeString("ko-KR")}
                     </p>
                     <ul className="mt-2 grow space-y-0.5 text-xs text-zinc-700">
-                      {latest.items.map((item) => (
-                        <li key={`${latest.id}-${item.menuId}`}>
+                      {summary.mergedItems.map((item) => (
+                        <li key={`${tableNum}-${item.menuId}`}>
                           {item.name} × {item.quantity} ={" "}
                           {formatKrw(item.lineTotal)}
                         </li>
                       ))}
                     </ul>
                     <p className="mt-2 text-xs font-bold text-zinc-800">
-                      총 결제 금액: {formatKrw(latest.totalAmount)}
+                      누적 결제 금액: {formatKrw(summary.totalAmount)}
                     </p>
                     <button
                       type="button"
-                      onClick={() => markPaid(latest.id)}
+                      onClick={() => void markTablePaid(tableNum)}
                       className="mt-2 h-8 rounded-lg bg-emerald-600 px-2 text-[11px] font-bold text-white transition hover:bg-emerald-500"
                     >
-                      결제완료 처리
+                      테이블 결제완료 처리
                     </button>
                   </>
                 ) : (
@@ -369,12 +449,17 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    void markPaid(alertOrder.id);
+                    const tableNum = Number.parseInt(alertOrder.customerName, 10);
+                    if (!Number.isNaN(tableNum)) {
+                      void markTablePaid(tableNum);
+                    } else {
+                      void markOrdersPaid([alertOrder.id]);
+                    }
                     setAlertOpen(false);
                   }}
                   className="h-9 rounded-lg bg-emerald-600 px-4 text-xs font-bold text-white transition hover:bg-emerald-500"
                 >
-                  바로 결제완료 처리
+                  테이블 전체 결제완료
                 </button>
               ) : null}
             </div>
