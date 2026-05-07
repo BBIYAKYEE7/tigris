@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MENU_ITEMS, formatKrw } from "@/lib/menu";
 
-const ORDER_HISTORY_KEY = "tigris:customerOrders:v1";
+const ACTIVE_TABLE_SESSION = "tigris:activeTableNum";
+const TABLE_POLL_MS = 4000;
 
 type OrderItemLine = {
   menuId: string;
@@ -40,52 +41,154 @@ const snowflakes = Array.from({ length: 36 }, (_, index) => {
   };
 });
 
-function readHistoryFromStorage(): OrderSnapshot[] {
+function readSessionTable(): number | null {
   if (typeof window === "undefined") {
-    return [];
+    return null;
   }
-  try {
-    const raw = window.localStorage.getItem(ORDER_HISTORY_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed as OrderSnapshot[];
-  } catch {
-    return [];
+  const raw = window.sessionStorage.getItem(ACTIVE_TABLE_SESSION);
+  if (!raw) {
+    return null;
   }
+  const n = parseInt(raw, 10);
+  if (Number.isNaN(n) || n < 1 || n > 999) {
+    return null;
+  }
+  return n;
 }
 
-function writeHistoryToStorage(orders: OrderSnapshot[]) {
+function writeSessionTable(n: number) {
   if (typeof window === "undefined") {
     return;
   }
-  try {
-    window.localStorage.setItem(ORDER_HISTORY_KEY, JSON.stringify(orders));
-  } catch {
-    /* storage full 또는 비공개 모드 */
+  window.sessionStorage.setItem(ACTIVE_TABLE_SESSION, String(n));
+}
+
+function clearSessionTable() {
+  if (typeof window === "undefined") {
+    return;
   }
+  window.sessionStorage.removeItem(ACTIVE_TABLE_SESSION);
 }
 
 export default function Home() {
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ??
     (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "/-/backend");
+  const mounted = useRef(true);
+
+  const [activeTableNum, setActiveTableNum] = useState<number | null>(null);
+  const [tablePickerDraft, setTablePickerDraft] = useState("");
+  const [tablePickerError, setTablePickerError] = useState("");
+
+  const [tableOrders, setTableOrders] = useState<OrderSnapshot[]>([]);
+  const [tableOrdersError, setTableOrdersError] = useState("");
+  const [tableOrdersLoading, setTableOrdersLoading] = useState(false);
+
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [toastOrder, setToastOrder] = useState<OrderSnapshot | null>(null);
-  const [orderHistory, setOrderHistory] = useState<OrderSnapshot[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [tableInput, setTableInput] = useState("");
   const [modalError, setModalError] = useState("");
 
   useEffect(() => {
-    setOrderHistory(readHistoryFromStorage());
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
   }, []);
+
+  useEffect(() => {
+    const saved = readSessionTable();
+    if (saved !== null) {
+      setActiveTableNum(saved);
+      setTablePickerDraft(String(saved));
+    }
+  }, []);
+
+  const fetchTableOrders = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (activeTableNum === null) {
+        setTableOrders([]);
+        return;
+      }
+      const silent = opts?.silent ?? false;
+      if (!silent) {
+        setTableOrdersLoading(true);
+      }
+      setTableOrdersError("");
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/orders/by-table/${activeTableNum}`);
+        const data = (await response.json()) as { orders?: OrderSnapshot[]; message?: string };
+        if (!response.ok || !data.orders) {
+          throw new Error(data.message ?? "테이블 주문을 불러오지 못했습니다.");
+        }
+        if (!mounted.current) {
+          return;
+        }
+        setTableOrders(data.orders);
+      } catch (e) {
+        if (!mounted.current) {
+          return;
+        }
+        setTableOrdersError(e instanceof Error ? e.message : "테이블 주문을 불러오지 못했습니다.");
+      } finally {
+        if (!mounted.current) {
+          return;
+        }
+        if (!silent) {
+          setTableOrdersLoading(false);
+        }
+      }
+    },
+    [apiBaseUrl, activeTableNum],
+  );
+
+  useEffect(() => {
+    if (activeTableNum === null) {
+      setTableOrders([]);
+      return;
+    }
+
+    void fetchTableOrders({ silent: false });
+
+    const id = window.setInterval(() => {
+      void fetchTableOrders({ silent: true });
+    }, TABLE_POLL_MS);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void fetchTableOrders({ silent: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [activeTableNum, fetchTableOrders]);
+
+  const applyTableNumber = () => {
+    setTablePickerError("");
+    const n = parseInt(tablePickerDraft.trim(), 10);
+    if (Number.isNaN(n) || n < 1 || n > 999) {
+      setTablePickerError("1~999 사이 테이블 번호를 입력해 주세요.");
+      return;
+    }
+    writeSessionTable(n);
+    setActiveTableNum(n);
+  };
+
+  const resetTableNumber = () => {
+    clearSessionTable();
+    setActiveTableNum(null);
+    setTableOrders([]);
+    setTablePickerDraft("");
+    setTablePickerError("");
+    setTableOrdersError("");
+  };
 
   const basicMenu = useMemo(() => MENU_ITEMS.filter((item) => item.category === "basic"), []);
   const specialMenu = useMemo(() => MENU_ITEMS.filter((item) => item.category === "set"), []);
@@ -109,11 +212,15 @@ export default function Home() {
     setSubmitError("");
     setToastOrder(null);
     setModalError("");
+    if (activeTableNum === null) {
+      setSubmitError("먼저 아래에서 테이블 번호를 적용해 주세요.");
+      return;
+    }
     if (totalAmount <= 0) {
       setSubmitError("먼저 메뉴 수량을 선택해 주세요.");
       return;
     }
-    setTableInput("");
+    setTableInput(String(activeTableNum));
     setModalOpen(true);
   };
 
@@ -121,15 +228,6 @@ export default function Home() {
     setModalOpen(false);
     setModalError("");
     setTableInput("");
-  };
-
-  const appendHistory = (order: OrderSnapshot) => {
-    setOrderHistory((prev) => {
-      const withoutDup = prev.filter((o) => o.id !== order.id);
-      const next = [order, ...withoutDup].slice(0, 80);
-      writeHistoryToStorage(next);
-      return next;
-    });
   };
 
   const submitOrderFromModal = async () => {
@@ -140,6 +238,11 @@ export default function Home() {
       setModalError("1~999 사이의 테이블 번호를 입력해 주세요.");
       return;
     }
+    if (activeTableNum !== null && tableNum !== activeTableNum) {
+      setModalError(`현재 화면은 ${activeTableNum}번 테이블입니다. 번호를 맞추거나 테이블을 다시 선택해 주세요.`);
+      return;
+    }
+
     const customerName = `${tableNum}번 테이블`;
 
     setIsSubmitting(true);
@@ -161,10 +264,13 @@ export default function Home() {
       if (!response.ok || !data.order) {
         throw new Error(data.message ?? "주문 처리 중 오류가 발생했습니다.");
       }
-      appendHistory(data.order);
+      writeSessionTable(tableNum);
+      setActiveTableNum(tableNum);
+      setTablePickerDraft(String(tableNum));
       setToastOrder(data.order);
       setQuantities({});
       closeModal();
+      void fetchTableOrders({ silent: true });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "주문 처리 중 오류가 발생했습니다.");
     } finally {
@@ -245,6 +351,104 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
+          <h2 className="text-xl font-bold text-pink-600">테이블 번호</h2>
+          <p className="mt-2 text-sm text-zinc-600">
+            같은 번호를 입력한 손님은 <span className="font-semibold">서로 같은 주문 목록</span>을 볼 수 있습니다.
+            카운터에서 해당 테이블 건을 결제완료 처리하면 여기 목록에서 사라집니다.
+          </p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-zinc-700">
+              우리 테이블
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={999}
+                value={tablePickerDraft}
+                onChange={(e) => setTablePickerDraft(e.target.value)}
+                placeholder="예: 5"
+                className="h-11 rounded-xl border border-pink-200 bg-white px-3 text-sm focus:border-pink-400 focus:outline-none"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={applyTableNumber}
+                className="h-11 rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500"
+              >
+                적용하기
+              </button>
+              {activeTableNum !== null ? (
+                <button
+                  type="button"
+                  onClick={resetTableNumber}
+                  className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                >
+                  테이블 초기화
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {tablePickerError ? <p className="mt-2 text-sm text-rose-600">{tablePickerError}</p> : null}
+          {activeTableNum !== null ? (
+            <p className="mt-3 text-sm font-semibold text-pink-700">
+              현재 연결됨: {activeTableNum}번 테이블 · 새로고침해도 이 탭에서는 유지됩니다.
+            </p>
+          ) : null}
+
+          {activeTableNum !== null ? (
+            <div className="mt-6 border-t border-pink-50 pt-5">
+              <h3 className="text-lg font-bold text-pink-600">이 테이블 주문 현황 (결제 전)</h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                약 {Math.round(TABLE_POLL_MS / 1000)}초마다 자동으로 갱신됩니다.
+              </p>
+              {tableOrdersLoading && tableOrders.length === 0 ? (
+                <p className="mt-4 text-sm text-zinc-600">불러오는 중…</p>
+              ) : null}
+              {tableOrdersError ? (
+                <p className="mt-3 text-sm text-rose-600">{tableOrdersError}</p>
+              ) : null}
+              {!tableOrdersLoading && tableOrders.length === 0 ? (
+                <p className="mt-4 text-sm text-zinc-600">결제 대기 중인 주문이 없습니다.</p>
+              ) : (
+                <ul className="mt-4 space-y-3">
+                  {tableOrders.map((order) => (
+                    <li
+                      key={order.id}
+                      className="rounded-2xl border border-pink-100 bg-pink-50/40 p-4 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-bold text-pink-700">{order.id}</span>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
+                          결제대기
+                        </span>
+                      </div>
+                      <p className="mt-1 text-zinc-700">
+                        {order.customerName} · {formatKrw(order.totalAmount)}
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        {new Date(order.createdAt).toLocaleString("ko-KR")}
+                      </p>
+                      <ul className="mt-2 space-y-0.5 text-zinc-600">
+                        {order.items.map((item) => (
+                          <li key={`${order.id}-${item.menuId}`}>
+                            {item.name} × {item.quantity} = {formatKrw(item.lineTotal)}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
+              테이블 번호를 적용하면 이 자리에서 모두 같은 대기 주문을 볼 수 있습니다.
+            </p>
+          )}
+        </section>
+
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="text-xl font-bold text-pink-600">기본 메뉴</h2>
@@ -273,7 +477,8 @@ export default function Home() {
         <section className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
           <h2 className="text-xl font-bold text-pink-600">주문하기</h2>
           <p className="mt-2 text-sm text-zinc-600">
-            메뉴를 고른 뒤 <span className="font-semibold text-pink-700">주문하기</span>를 누르면 테이블 번호를 입력하는 창이 열립니다.
+            테이블을 적용한 뒤 메뉴를 고르고{" "}
+            <span className="font-semibold text-pink-700">주문하기</span>를 누르면 확인 창에서 같은 테이블로 전달됩니다.
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <button
@@ -298,51 +503,6 @@ export default function Home() {
               </p>
             </div>
           ) : null}
-        </section>
-
-        <section className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
-          <h2 className="text-xl font-bold text-pink-600">내 주문 내역</h2>
-          <p className="mt-1 text-xs text-zinc-500">
-            이 기기 브라우저에 저장됩니다. 새로고침해도 유지됩니다. (다른 폰이나 시크릿 창에서는 보이지 않습니다.) 카운터에서 결제가 끝나도 여기 표시된 &quot;결제대기&quot;는 자동으로 바뀌지 않을 수 있습니다.
-          </p>
-          {orderHistory.length === 0 ? (
-            <p className="mt-4 text-sm text-zinc-600">아직 저장된 주문이 없습니다.</p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {orderHistory.map((order) => (
-                <li
-                  key={order.id}
-                  className="rounded-2xl border border-pink-100 bg-pink-50/40 p-4 text-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-bold text-pink-700">{order.id}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                        order.status === "PAID"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-amber-100 text-amber-700"
-                      }`}
-                    >
-                      {order.status === "PAID" ? "결제완료" : "결제대기"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-zinc-700">
-                    {order.customerName} · {formatKrw(order.totalAmount)}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    {new Date(order.createdAt).toLocaleString("ko-KR")}
-                  </p>
-                  <ul className="mt-2 space-y-0.5 text-zinc-600">
-                    {order.items.map((item) => (
-                      <li key={`${order.id}-${item.menuId}`}>
-                        {item.name} × {item.quantity} = {formatKrw(item.lineTotal)}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
         </section>
 
         <section className="grid gap-4 md:grid-cols-3">
@@ -392,9 +552,13 @@ export default function Home() {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h3 id="table-modal-title" className="text-lg font-bold text-pink-600">
-              테이블 번호 입력
+              주문 확인
             </h3>
-            <p className="mt-1 text-sm text-zinc-600">주문이 전달될 테이블 번호를 적어 주세요.</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              {activeTableNum !== null
+                ? `선택된 ${activeTableNum}번 테이블로 접수합니다. 필요 시 번호만 바꿀 수 있습니다.`
+                : "테이블 번호를 확인해 주세요."}
+            </p>
             <label htmlFor="table-number" className="mt-4 block text-sm font-medium text-zinc-700">
               테이블 번호
               <input

@@ -33,6 +33,20 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
+app.get("/api/orders/by-table/:tableNum", async (req, res) => {
+  const tableNum = parseInt(req.params.tableNum, 10);
+  if (Number.isNaN(tableNum) || tableNum < 1 || tableNum > 999) {
+    res.status(400).json({ message: "유효한 테이블 번호가 아닙니다." });
+    return;
+  }
+  const label = `${tableNum}번 테이블`;
+  const all = await orderStore.listOrders();
+  const orders = all
+    .filter((order) => order.customerName === label && order.status === "PENDING")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  res.json({ orders });
+});
+
 const validateAdminWrite = (requestToken: string | undefined) => {
   if (!adminToken) {
     return null;
