@@ -501,7 +501,7 @@ export default function Home() {
           </article>
 
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
-            <h2 className="text-xl font-bold text-pink-600">🎁 티그리스 세트</h2>
+            <h2 className="text-xl font-bold text-pink-600">🎁 티그세트</h2>
             <ul className="mt-4 space-y-3">
               {specialMenu.map((item) =>
                 renderMenuCard(item.id, item.name, item.price, item.description),
@@ -614,7 +614,7 @@ export default function Home() {
             <h2 className="text-lg font-bold text-pink-600">이벤트</h2>
             <ul className="mt-3 space-y-2 text-sm text-zinc-700 sm:text-base">
               <li>
-                주점에서 노는 사진을 핑크색 이모티콘이나 스티커로 꾸며서 @kutigris 태그하여 스토리를 올리시면 티그리스 세트를 50% 할인해 드립니다!
+                주점에서 노는 사진을 핑크색 이모티콘이나 스티커로 꾸며서 @kutigris 태그하여 스토리를 올리시면 티그세트를 50% 할인해 드립니다!
               </li>
             </ul>
           </article>
