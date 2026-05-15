@@ -103,6 +103,7 @@ export default function Home() {
 
   const tableNumberLocked = activeTableNum !== null && !tableChangeAllowed;
   const showTableSetupModal = sessionHydrated && activeTableNum === null;
+  const anyModalOpen = showTableSetupModal || orderConfirmOpen;
 
   /** 결제대기 주문을 한 번이라도 본 뒤 목록이 비면 '카운터 결제 완료'로 간주하고 이용중 ping 중단 */
   const hadPendingTableOrdersRef = useRef(false);
@@ -122,6 +123,23 @@ export default function Home() {
     }
     setSessionHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!anyModalOpen) {
+      return;
+    }
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, [anyModalOpen]);
 
   const pingTableGuestPresence = useCallback(
     async (tableNum: number) => {
