@@ -6,6 +6,9 @@ export type MenuItem = {
   description?: string;
 };
 
+/** 확정 전 예시 금액 — 실제 테이블비가 정해지면 이 값만 수정하세요 */
+export const TABLE_FEE_EXAMPLE = 5000;
+
 export const MENU_ITEMS: MenuItem[] = [
   { id: "macaroni", name: "기본안주 마카로니", price: 3000, category: "basic" },
   { id: "ssy", name: "쏘야", price: 12000, category: "basic" },

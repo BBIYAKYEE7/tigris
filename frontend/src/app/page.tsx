@@ -3,7 +3,7 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MENU_ITEMS, formatKrw } from "@/lib/menu";
+import { MENU_ITEMS, TABLE_FEE_EXAMPLE, formatKrw } from "@/lib/menu";
 
 const ACTIVE_TABLE_SESSION = "tigris:activeTableNum";
 const TABLE_POLL_MS = 4000;
@@ -84,9 +84,11 @@ export default function Home() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   const mounted = useRef(true);
 
+  const [sessionHydrated, setSessionHydrated] = useState(false);
   const [activeTableNum, setActiveTableNum] = useState<number | null>(null);
-  const [tablePickerDraft, setTablePickerDraft] = useState("");
-  const [tablePickerError, setTablePickerError] = useState("");
+  const [tableChangeAllowed, setTableChangeAllowed] = useState(false);
+  const [setupTableDraft, setSetupTableDraft] = useState("");
+  const [setupTableError, setSetupTableError] = useState("");
 
   const [tableOrders, setTableOrders] = useState<OrderSnapshot[]>([]);
   const [tableOrdersError, setTableOrdersError] = useState("");
@@ -96,12 +98,11 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [toastOrder, setToastOrder] = useState<OrderSnapshot | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [tableInput, setTableInput] = useState("");
-  const [modalError, setModalError] = useState("");
-  const [tableLockError, setTableLockError] = useState("");
+  const [orderConfirmOpen, setOrderConfirmOpen] = useState(false);
+  const [orderConfirmError, setOrderConfirmError] = useState("");
 
-  const tableLocked = activeTableNum !== null && tableOrders.length > 0;
+  const tableNumberLocked = activeTableNum !== null && !tableChangeAllowed;
+  const showTableSetupModal = sessionHydrated && activeTableNum === null;
 
   /** 결제대기 주문을 한 번이라도 본 뒤 목록이 비면 '카운터 결제 완료'로 간주하고 이용중 ping 중단 */
   const hadPendingTableOrdersRef = useRef(false);
@@ -118,8 +119,8 @@ export default function Home() {
     const saved = readSessionTable();
     if (saved !== null) {
       setActiveTableNum(saved);
-      setTablePickerDraft(String(saved));
     }
+    setSessionHydrated(true);
   }, []);
 
   const pingTableGuestPresence = useCallback(
@@ -182,6 +183,7 @@ export default function Home() {
         } else if (hadPendingTableOrdersRef.current) {
           hadPendingTableOrdersRef.current = false;
           guestPaidIdleRef.current = true;
+          setTableChangeAllowed(true);
           void clearTableGuestPresence(tableNumForPing);
         } else if (!guestPaidIdleRef.current) {
           void pingTableGuestPresence(tableNumForPing);
@@ -208,6 +210,7 @@ export default function Home() {
       setTableOrders([]);
       hadPendingTableOrdersRef.current = false;
       guestPaidIdleRef.current = false;
+      setTableChangeAllowed(false);
       return;
     }
 
@@ -230,33 +233,24 @@ export default function Home() {
     };
   }, [activeTableNum, fetchTableOrders]);
 
-  const applyTableNumber = () => {
-    setTablePickerError("");
-    setTableLockError("");
-    if (tableLocked) {
-      setTableLockError("결제대기 주문이 있어 테이블 번호를 변경할 수 없습니다. 결제 완료 후 다시 시도해 주세요.");
-      return;
-    }
-    const n = parseInt(tablePickerDraft.trim(), 10);
+  const confirmTableSetup = () => {
+    setSetupTableError("");
+    const n = parseInt(setupTableDraft.trim(), 10);
     if (Number.isNaN(n) || n < 1 || n > 999) {
-      setTablePickerError("1~999 사이 테이블 번호를 입력해 주세요.");
+      setSetupTableError("1~999 사이 테이블 번호를 입력해 주세요.");
       return;
-    }
-    const prev = activeTableNum;
-    if (prev !== null && prev !== n) {
-      void clearTableGuestPresence(prev);
     }
     hadPendingTableOrdersRef.current = false;
     guestPaidIdleRef.current = false;
+    setTableChangeAllowed(false);
     writeSessionTable(n);
     setActiveTableNum(n);
+    setSetupTableDraft("");
     void pingTableGuestPresence(n);
   };
 
-  const resetTableNumber = () => {
-    setTableLockError("");
-    if (tableLocked) {
-      setTableLockError("결제대기 주문이 있어 테이블 번호를 초기화할 수 없습니다. 결제 완료 후 다시 시도해 주세요.");
+  const startTableChangeAfterPayment = () => {
+    if (!tableChangeAllowed || tableOrders.length > 0) {
       return;
     }
     const prev = activeTableNum;
@@ -268,9 +262,8 @@ export default function Home() {
     clearSessionTable();
     setActiveTableNum(null);
     setTableOrders([]);
-    setTablePickerDraft("");
-    setTablePickerError("");
     setTableOrdersError("");
+    setTableChangeAllowed(false);
   };
 
   const basicMenu = useMemo(() => MENU_ITEMS.filter((item) => item.category === "basic"), []);
@@ -291,42 +284,34 @@ export default function Home() {
     setQuantities((prev) => ({ ...prev, [menuId]: sanitized }));
   };
 
-  const openOrderModal = () => {
+  const openOrderConfirm = () => {
     setSubmitError("");
     setToastOrder(null);
-    setModalError("");
+    setOrderConfirmError("");
     if (activeTableNum === null) {
-      setSubmitError("먼저 아래에서 테이블 번호를 적용해 주세요.");
+      setSubmitError("테이블 번호를 먼저 입력해 주세요.");
       return;
     }
     if (totalAmount <= 0) {
       setSubmitError("먼저 메뉴 수량을 선택해 주세요.");
       return;
     }
-    setTableInput(String(activeTableNum));
-    setModalOpen(true);
+    setOrderConfirmOpen(true);
   };
 
-  const closeModal = () => {
-    setModalOpen(false);
-    setModalError("");
-    setTableInput("");
+  const closeOrderConfirm = () => {
+    setOrderConfirmOpen(false);
+    setOrderConfirmError("");
   };
 
-  const submitOrderFromModal = async () => {
-    setModalError("");
-    const trimmed = tableInput.trim();
-    const tableNum = parseInt(trimmed, 10);
-    if (!trimmed || Number.isNaN(tableNum) || tableNum < 1 || tableNum > 999) {
-      setModalError("1~999 사이의 테이블 번호를 입력해 주세요.");
-      return;
-    }
-    if (activeTableNum !== null && tableNum !== activeTableNum) {
-      setModalError(`현재 화면은 ${activeTableNum}번 테이블입니다. 번호를 맞추거나 테이블을 다시 선택해 주세요.`);
+  const submitOrder = async () => {
+    setOrderConfirmError("");
+    if (activeTableNum === null) {
+      setOrderConfirmError("테이블 번호가 설정되지 않았습니다.");
       return;
     }
 
-    const customerName = `${tableNum}번 테이블`;
+    const customerName = `${activeTableNum}번 테이블`;
 
     setIsSubmitting(true);
     setSubmitError("");
@@ -347,13 +332,11 @@ export default function Home() {
       if (!response.ok || !data.order) {
         throw new Error(data.message ?? "주문 처리 중 오류가 발생했습니다.");
       }
-      writeSessionTable(tableNum);
-      setActiveTableNum(tableNum);
-      setTablePickerDraft(String(tableNum));
       setToastOrder(data.order);
       setQuantities({});
       guestPaidIdleRef.current = false;
-      closeModal();
+      setTableChangeAllowed(false);
+      closeOrderConfirm();
       void fetchTableOrders({ silent: true });
     } catch (error) {
       setSubmitError(describeFetchFailure(error));
@@ -452,112 +435,29 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
-          <h2 className="text-xl font-bold text-pink-600">테이블 번호</h2>
-          <p className="mt-2 text-sm text-zinc-600">
-            같은 번호를 입력한 손님은 <span className="font-semibold">서로 같은 주문 목록</span>을 볼 수 있습니다.
-            카운터에서 해당 테이블 건을 결제완료 처리하면 여기 목록에서 사라집니다.
-          </p>
-          {tableLocked ? (
-            <p className="mt-2 text-sm font-semibold text-pink-700">
-              결제대기 주문이 있어 테이블 번호가 잠겼습니다. (결제 완료되면 다시 변경 가능)
-            </p>
-          ) : null}
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-zinc-700">
-              우리 테이블
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={999}
-                value={tablePickerDraft}
-                onChange={(e) => setTablePickerDraft(e.target.value)}
-                placeholder="예: 5"
-                disabled={tableLocked}
-                className="h-11 rounded-xl border border-pink-200 bg-white px-3 text-sm focus:border-pink-400 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500"
-              />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={applyTableNumber}
-                disabled={tableLocked}
-                className="h-11 rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500"
-              >
-                적용하기
-              </button>
-              {activeTableNum !== null ? (
+        {activeTableNum !== null ? (
+          <section className="rounded-3xl border border-pink-100 bg-white px-5 py-4 shadow-sm sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-pink-700">
+                {activeTableNum}번 테이블
+                {tableNumberLocked ? (
+                  <span className="ml-2 font-normal text-zinc-600">· 결제 전까지 번호 변경 불가</span>
+                ) : (
+                  <span className="ml-2 font-normal text-emerald-700">· 결제 완료, 테이블 변경 가능</span>
+                )}
+              </p>
+              {tableChangeAllowed && tableOrders.length === 0 ? (
                 <button
                   type="button"
-                  onClick={resetTableNumber}
-                  disabled={tableLocked}
-                  className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
+                  onClick={startTableChangeAfterPayment}
+                  className="text-sm font-semibold text-pink-600 underline-offset-2 hover:underline"
                 >
-                  테이블 초기화
+                  다른 테이블로 변경
                 </button>
               ) : null}
             </div>
-          </div>
-          {tablePickerError ? <p className="mt-2 text-sm text-rose-600">{tablePickerError}</p> : null}
-          {tableLockError ? <p className="mt-2 text-sm text-rose-600">{tableLockError}</p> : null}
-          {activeTableNum !== null ? (
-            <p className="mt-3 text-sm font-semibold text-pink-700">
-              현재 연결됨: {activeTableNum}번 테이블 · 새로고침해도 이 탭에서는 유지됩니다.
-            </p>
-          ) : null}
-
-          {activeTableNum !== null ? (
-            <div className="mt-6 border-t border-pink-50 pt-5">
-              <h3 className="text-lg font-bold text-pink-600">이 테이블 주문 현황 (결제 전)</h3>
-              <p className="mt-1 text-xs text-zinc-500">
-                약 {Math.round(TABLE_POLL_MS / 1000)}초마다 자동으로 갱신됩니다.
-              </p>
-              {tableOrdersLoading && tableOrders.length === 0 ? (
-                <p className="mt-4 text-sm text-zinc-600">불러오는 중…</p>
-              ) : null}
-              {tableOrdersError ? (
-                <p className="mt-3 text-sm text-rose-600">{tableOrdersError}</p>
-              ) : null}
-              {!tableOrdersLoading && tableOrders.length === 0 ? (
-                <p className="mt-4 text-sm text-zinc-600">결제 대기 중인 주문이 없습니다.</p>
-              ) : (
-                <ul className="mt-4 space-y-3">
-                  {tableOrders.map((order) => (
-                    <li
-                      key={order.id}
-                      className="rounded-2xl border border-pink-100 bg-pink-50/40 p-4 text-sm"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-bold text-pink-700">{order.id}</span>
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
-                          결제대기
-                        </span>
-                      </div>
-                      <p className="mt-1 text-zinc-700">
-                        {order.customerName} · {formatKrw(order.totalAmount)}
-                      </p>
-                      <p className="text-xs text-zinc-500">
-                        {new Date(order.createdAt).toLocaleString("ko-KR")}
-                      </p>
-                      <ul className="mt-2 space-y-0.5 text-zinc-600">
-                        {order.items.map((item) => (
-                          <li key={`${order.id}-${item.menuId}`}>
-                            {item.name} × {item.quantity} = {formatKrw(item.lineTotal)}
-                          </li>
-                        ))}
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : (
-            <p className="mt-4 rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
-              테이블 번호를 적용하면 이 자리에서 모두 같은 대기 주문을 볼 수 있습니다.
-            </p>
-          )}
-        </section>
+          </section>
+        ) : null}
 
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
@@ -586,15 +486,65 @@ export default function Home() {
 
         <section className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
           <h2 className="text-xl font-bold text-pink-600">주문하기</h2>
+          {activeTableNum !== null ? (
+            <p className="mt-2 text-sm text-zinc-600">
+              <span className="font-semibold text-pink-700">{activeTableNum}번 테이블</span>로 주문이 접수됩니다.
+              카운터에서 결제 완료 처리되면 테이블 번호를 변경할 수 있습니다.
+            </p>
+          ) : null}
           <p className="mt-2 text-sm text-zinc-600">
-            테이블을 적용한 뒤 메뉴를 고르고{" "}
-            <span className="font-semibold text-pink-700">주문하기</span>를 누르면 확인 창에서 같은 테이블로 전달됩니다.
+            테이블비 <span className="font-semibold">{formatKrw(TABLE_FEE_EXAMPLE)}</span>
+            <span className="text-zinc-500"> (예시 금액, 확정 전)</span>
           </p>
+          {activeTableNum !== null ? (
+            <div className="mt-5 border-t border-pink-50 pt-5">
+              <h3 className="text-base font-bold text-pink-600">결제 대기 주문</h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                약 {Math.round(TABLE_POLL_MS / 1000)}초마다 자동 갱신 · 같은 번호를 입력한 손님과 목록을 공유합니다.
+              </p>
+              {tableOrdersLoading && tableOrders.length === 0 ? (
+                <p className="mt-3 text-sm text-zinc-600">불러오는 중…</p>
+              ) : null}
+              {tableOrdersError ? (
+                <p className="mt-3 text-sm text-rose-600">{tableOrdersError}</p>
+              ) : null}
+              {!tableOrdersLoading && tableOrders.length === 0 ? (
+                <p className="mt-3 text-sm text-zinc-600">결제 대기 중인 주문이 없습니다.</p>
+              ) : (
+                <ul className="mt-3 space-y-3">
+                  {tableOrders.map((order) => (
+                    <li
+                      key={order.id}
+                      className="rounded-2xl border border-pink-100 bg-pink-50/40 p-4 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-bold text-pink-700">{order.id}</span>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
+                          결제대기
+                        </span>
+                      </div>
+                      <p className="mt-1 text-zinc-700">{formatKrw(order.totalAmount)}</p>
+                      <p className="text-xs text-zinc-500">
+                        {new Date(order.createdAt).toLocaleString("ko-KR")}
+                      </p>
+                      <ul className="mt-2 space-y-0.5 text-zinc-600">
+                        {order.items.map((item) => (
+                          <li key={`${order.id}-${item.menuId}`}>
+                            {item.name} × {item.quantity} = {formatKrw(item.lineTotal)}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <button
               type="button"
-              onClick={openOrderModal}
-              disabled={isSubmitting}
+              onClick={openOrderConfirm}
+              disabled={isSubmitting || activeTableNum === null}
               className="h-11 rounded-xl bg-pink-600 px-6 text-sm font-bold text-white transition hover:bg-pink-500 disabled:cursor-not-allowed disabled:bg-pink-300"
             >
               {isSubmitting ? "주문 처리 중..." : "주문하기"}
@@ -620,18 +570,17 @@ export default function Home() {
             <h2 className="text-lg font-bold text-pink-600">이벤트</h2>
             <ul className="mt-3 space-y-2 text-sm text-zinc-700 sm:text-base">
               <li>
-                인스타그램: 주점에서 노는 사진 + 핑크색 이모티콘·스티커로 꾸밈 + @kutigris 태그 → 티그리스
-                세트 50% 할인
+                주점에서 노는 사진을 핑크색 이모티콘이나 스티커로 꾸며서 @kutigris 태그하여 스토리를 올리시면 티그리스 세트를 50% 할인해 드립니다!
               </li>
             </ul>
           </article>
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="text-lg font-bold text-pink-600">주점 안내</h2>
             <ul className="mt-3 space-y-2 text-sm text-zinc-700 sm:text-base">
+              <li>테이블비: {formatKrw(TABLE_FEE_EXAMPLE)} (예시, 확정 전)</li>
               <li>운영 시간: 18:00 ~ 24:00</li>
               <li>결제: 카드 / 계좌이체 / 현금 가능</li>
               <li>문의: @kutigris (Instagram)</li>
-              <li>관리자 페이지: /admin</li>
             </ul>
           </article>
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
@@ -646,15 +595,63 @@ export default function Home() {
         </section>
       </main>
 
-      {modalOpen ? (
+      {showTableSetupModal ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="table-setup-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-pink-100 bg-white p-6 shadow-xl">
+            <h3 id="table-setup-title" className="text-lg font-bold text-pink-600">
+              테이블 번호 입력
+            </h3>
+            <p className="mt-2 text-sm text-zinc-600">
+              앉으신 테이블 번호를 입력해 주세요. 결제가 완료되기 전까지는 번호를 변경할 수 없습니다.
+            </p>
+            <label htmlFor="table-setup-number" className="mt-4 block text-sm font-medium text-zinc-700">
+              테이블 번호
+              <input
+                id="table-setup-number"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={999}
+                value={setupTableDraft}
+                onChange={(e) => setSetupTableDraft(e.target.value)}
+                placeholder="예: 5"
+                className="mt-1 w-full rounded-xl border border-pink-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    confirmTableSetup();
+                  }
+                }}
+              />
+            </label>
+            {setupTableError ? <p className="mt-2 text-sm text-rose-600">{setupTableError}</p> : null}
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={confirmTableSetup}
+                className="h-10 rounded-xl bg-pink-600 px-5 text-sm font-bold text-white transition hover:bg-pink-500"
+              >
+                시작하기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {orderConfirmOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="table-modal-title"
+          aria-labelledby="order-confirm-title"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) {
-              closeModal();
+              closeOrderConfirm();
             }
           }}
         >
@@ -662,43 +659,25 @@ export default function Home() {
             className="w-full max-w-md rounded-2xl border border-pink-100 bg-white p-6 shadow-xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <h3 id="table-modal-title" className="text-lg font-bold text-pink-600">
+            <h3 id="order-confirm-title" className="text-lg font-bold text-pink-600">
               주문 확인
             </h3>
-            <p className="mt-1 text-sm text-zinc-600">
-              {activeTableNum !== null
-                ? `선택된 ${activeTableNum}번 테이블로 접수합니다. 필요 시 번호만 바꿀 수 있습니다.`
-                : "테이블 번호를 확인해 주세요."}
+            <p className="mt-2 text-sm text-zinc-600">
+              {activeTableNum}번 테이블로 주문합니다. 메뉴 합계{" "}
+              <span className="font-bold text-pink-700">{formatKrw(totalAmount)}</span>
             </p>
-            <label htmlFor="table-number" className="mt-4 block text-sm font-medium text-zinc-700">
-              테이블 번호
-              <input
-                id="table-number"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={999}
-                value={tableInput}
-                onChange={(e) => setTableInput(e.target.value)}
-                placeholder="예: 5"
-                disabled={activeTableNum !== null}
-                className="mt-1 w-full rounded-xl border border-pink-200 px-3 py-2 text-sm focus:border-pink-400 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500"
-                autoFocus={activeTableNum === null}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    closeModal();
-                  }
-                  if (e.key === "Enter") {
-                    void submitOrderFromModal();
-                  }
-                }}
-              />
-            </label>
-            {modalError ? <p className="mt-2 text-sm text-rose-600">{modalError}</p> : null}
+            <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-sm text-zinc-700">
+              {MENU_ITEMS.filter((item) => (quantities[item.id] ?? 0) > 0).map((item) => (
+                <li key={item.id}>
+                  {item.name} × {quantities[item.id]} = {formatKrw(item.price * (quantities[item.id] ?? 0))}
+                </li>
+              ))}
+            </ul>
+            {orderConfirmError ? <p className="mt-2 text-sm text-rose-600">{orderConfirmError}</p> : null}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={closeModal}
+                onClick={closeOrderConfirm}
                 className="h-10 rounded-xl border border-zinc-200 px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
               >
                 취소
@@ -706,10 +685,10 @@ export default function Home() {
               <button
                 type="button"
                 disabled={isSubmitting}
-                onClick={() => void submitOrderFromModal()}
+                onClick={() => void submitOrder()}
                 className="h-10 rounded-xl bg-pink-600 px-4 text-sm font-bold text-white transition hover:bg-pink-500 disabled:bg-pink-300"
               >
-                {isSubmitting ? "처리 중…" : "주문 확인"}
+                {isSubmitting ? "처리 중…" : "주문하기"}
               </button>
             </div>
           </div>
