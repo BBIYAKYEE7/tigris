@@ -34,7 +34,7 @@ type TablePendingSummary = {
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
 /** `frontend/public/audio/alert.mp3` → 브라우저에서는 `/audio/alert.mp3` */
-const ALERT_SOUND_SRC = "/audio/alert.mp3";
+const ALERT_SOUND_SRC = "audio/alert.mp3;"
 
 export default function AdminPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";

@@ -1,4 +1,10 @@
-import { MENU_ITEMS } from "@/lib/menu";
+import {
+  MENU_ITEMS,
+  TABLE_FEE_AMOUNT,
+  TABLE_FEE_MENU_ID,
+  TABLE_FEE_NAME,
+  isTableFeeMenuId,
+} from "@/lib/menu";
 
 export type OrderStatus = "PENDING" | "PAID";
 
@@ -25,9 +31,32 @@ type OrderStore = {
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<Order>;
 };
 
-const createOrderPayload = (customerName: string, quantities: Record<string, number>) => {
+function tableFeeAlreadyPending(customerName: string, existingOrders: Order[]) {
+  const label = customerName.trim();
+  return existingOrders.some(
+    (order) =>
+      order.customerName === label &&
+      order.status === "PENDING" &&
+      order.items.some((item) => isTableFeeMenuId(item.menuId)),
+  );
+}
+
+const createTableFeeItem = (): OrderItem => ({
+  menuId: TABLE_FEE_MENU_ID,
+  name: TABLE_FEE_NAME,
+  unitPrice: TABLE_FEE_AMOUNT,
+  quantity: 1,
+  lineTotal: TABLE_FEE_AMOUNT,
+});
+
+const createOrderPayload = (
+  customerName: string,
+  quantities: Record<string, number>,
+  existingOrders: Order[] = [],
+) => {
   const items = Object.entries(quantities)
     .filter(([, qty]) => qty > 0)
+    .filter(([menuId]) => !isTableFeeMenuId(menuId))
     .map(([menuId, qty]) => {
       const menu = MENU_ITEMS.find((item) => item.id === menuId);
       if (!menu) {
@@ -44,6 +73,10 @@ const createOrderPayload = (customerName: string, quantities: Record<string, num
 
   if (items.length === 0) {
     throw new Error("최소 1개 이상 선택해주세요.");
+  }
+
+  if (!tableFeeAlreadyPending(customerName, existingOrders)) {
+    items.unshift(createTableFeeItem());
   }
 
   const totalAmount = items.reduce((sum, item) => sum + item.lineTotal, 0);
@@ -67,7 +100,7 @@ class InMemoryOrderStore implements OrderStore {
   }
 
   async createOrder(customerName: string, quantities: Record<string, number>) {
-    const order = createOrderPayload(customerName, quantities);
+    const order = createOrderPayload(customerName, quantities, this.orders);
     this.orders.unshift(order);
     return order;
   }
@@ -139,8 +172,8 @@ class UpstashOrderStore implements OrderStore {
   }
 
   async createOrder(customerName: string, quantities: Record<string, number>) {
-    const order = createOrderPayload(customerName, quantities);
     const current = await this.readOrders();
+    const order = createOrderPayload(customerName, quantities, current);
     current.unshift(order);
     await this.writeOrders(current);
     return order;

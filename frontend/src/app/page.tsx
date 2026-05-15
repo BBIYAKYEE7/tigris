@@ -3,7 +3,14 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MENU_ITEMS, TABLE_FEE_EXAMPLE, formatKrw } from "@/lib/menu";
+import {
+  MENU_ITEMS,
+  TABLE_FEE_AMOUNT,
+  TABLE_FEE_EXAMPLE,
+  TABLE_FEE_NAME,
+  isTableFeeMenuId,
+  formatKrw,
+} from "@/lib/menu";
 
 const ACTIVE_TABLE_SESSION = "tigris:activeTableNum";
 const TABLE_POLL_MS = 4000;
@@ -288,7 +295,7 @@ export default function Home() {
   const specialMenu = useMemo(() => MENU_ITEMS.filter((item) => item.category === "set"), []);
   const drinksAndExtras = useMemo(() => MENU_ITEMS.filter((item) => item.category === "extra"), []);
 
-  const totalAmount = useMemo(
+  const menuSubtotal = useMemo(
     () =>
       MENU_ITEMS.reduce((sum, item) => {
         const quantity = quantities[item.id] ?? 0;
@@ -296,6 +303,14 @@ export default function Home() {
       }, 0),
     [quantities],
   );
+
+  const tableFeeAlreadyOnBill = useMemo(
+    () => tableOrders.some((order) => order.items.some((item) => isTableFeeMenuId(item.menuId))),
+    [tableOrders],
+  );
+
+  const tableFeeDue = activeTableNum !== null && !tableFeeAlreadyOnBill ? TABLE_FEE_AMOUNT : 0;
+  const checkoutTotal = menuSubtotal + tableFeeDue;
 
   const setQuantity = (menuId: string, nextValue: number) => {
     const sanitized = Number.isNaN(nextValue) ? 0 : Math.max(0, Math.min(99, nextValue));
@@ -310,7 +325,7 @@ export default function Home() {
       setSubmitError("테이블 번호를 먼저 입력해 주세요.");
       return;
     }
-    if (totalAmount <= 0) {
+    if (menuSubtotal <= 0) {
       setSubmitError("먼저 메뉴 수량을 선택해 주세요.");
       return;
     }
@@ -568,9 +583,20 @@ export default function Home() {
               {isSubmitting ? "주문 처리 중..." : "주문하기"}
             </button>
           </div>
-          <p className="mt-3 text-sm font-semibold text-pink-700">
-            현재 선택 금액: {formatKrw(totalAmount)}
-          </p>
+          <div className="mt-3 space-y-1 text-sm text-zinc-700">
+            <p>
+              메뉴 합계: <span className="font-semibold">{formatKrw(menuSubtotal)}</span>
+            </p>
+            {tableFeeDue > 0 ? (
+              <p>
+                {TABLE_FEE_NAME}: <span className="font-semibold">{formatKrw(tableFeeDue)}</span>
+                <span className="text-zinc-500"> (예시, 확정 전)</span>
+              </p>
+            ) : tableFeeAlreadyOnBill ? (
+              <p className="text-zinc-500">{TABLE_FEE_NAME}은 이미 결제 대기 목록에 포함되어 있습니다.</p>
+            ) : null}
+            <p className="font-bold text-pink-700">결제 예정 총액: {formatKrw(checkoutTotal)}</p>
+          </div>
           {submitError ? <p className="mt-2 text-sm text-rose-600">{submitError}</p> : null}
           {toastOrder ? (
             <div className="mt-3 rounded-2xl bg-pink-50 p-4 ring-1 ring-pink-100">
@@ -680,17 +706,20 @@ export default function Home() {
             <h3 id="order-confirm-title" className="text-lg font-bold text-pink-600">
               주문 확인
             </h3>
-            <p className="mt-2 text-sm text-zinc-600">
-              {activeTableNum}번 테이블로 주문합니다. 메뉴 합계{" "}
-              <span className="font-bold text-pink-700">{formatKrw(totalAmount)}</span>
-            </p>
+            <p className="mt-2 text-sm text-zinc-600">{activeTableNum}번 테이블로 주문합니다.</p>
             <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-sm text-zinc-700">
               {MENU_ITEMS.filter((item) => (quantities[item.id] ?? 0) > 0).map((item) => (
                 <li key={item.id}>
                   {item.name} × {quantities[item.id]} = {formatKrw(item.price * (quantities[item.id] ?? 0))}
                 </li>
               ))}
+              {tableFeeDue > 0 ? (
+                <li>
+                  {TABLE_FEE_NAME} × 1 = {formatKrw(tableFeeDue)}
+                </li>
+              ) : null}
             </ul>
+            <p className="mt-3 text-sm font-bold text-pink-700">결제 예정 총액: {formatKrw(checkoutTotal)}</p>
             {orderConfirmError ? <p className="mt-2 text-sm text-rose-600">{orderConfirmError}</p> : null}
             <div className="mt-5 flex justify-end gap-2">
               <button
