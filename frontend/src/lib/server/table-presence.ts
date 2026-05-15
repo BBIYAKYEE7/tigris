@@ -121,3 +121,15 @@ export async function listActiveTablePresence(nowMs = Date.now()): Promise<Activ
   out.sort((a, b) => a.tableNum - b.tableNum);
   return out;
 }
+
+export function parseTableNumFromCustomerName(customerName: string): number | null {
+  const m = /^(\d+)번 테이블$/.exec(customerName.trim());
+  if (!m) {
+    return null;
+  }
+  const n = parseInt(m[1], 10);
+  if (Number.isNaN(n) || n < 1 || n > 999) {
+    return null;
+  }
+  return n;
+}

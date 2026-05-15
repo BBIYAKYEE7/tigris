@@ -103,6 +103,10 @@ export default function Home() {
 
   const tableLocked = activeTableNum !== null && tableOrders.length > 0;
 
+  /** 결제대기 주문을 한 번이라도 본 뒤 목록이 비면 '카운터 결제 완료'로 간주하고 이용중 ping 중단 */
+  const hadPendingTableOrdersRef = useRef(false);
+  const guestPaidIdleRef = useRef(false);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -170,7 +174,18 @@ export default function Home() {
           return;
         }
         setTableOrders(data.orders);
-        void pingTableGuestPresence(tableNumForPing);
+
+        if (data.orders.length > 0) {
+          guestPaidIdleRef.current = false;
+          hadPendingTableOrdersRef.current = true;
+          void pingTableGuestPresence(tableNumForPing);
+        } else if (hadPendingTableOrdersRef.current) {
+          hadPendingTableOrdersRef.current = false;
+          guestPaidIdleRef.current = true;
+          void clearTableGuestPresence(tableNumForPing);
+        } else if (!guestPaidIdleRef.current) {
+          void pingTableGuestPresence(tableNumForPing);
+        }
       } catch (e) {
         if (!mounted.current) {
           return;
@@ -185,12 +200,14 @@ export default function Home() {
         }
       }
     },
-    [apiBaseUrl, activeTableNum, pingTableGuestPresence],
+    [apiBaseUrl, activeTableNum, pingTableGuestPresence, clearTableGuestPresence],
   );
 
   useEffect(() => {
     if (activeTableNum === null) {
       setTableOrders([]);
+      hadPendingTableOrdersRef.current = false;
+      guestPaidIdleRef.current = false;
       return;
     }
 
@@ -229,6 +246,8 @@ export default function Home() {
     if (prev !== null && prev !== n) {
       void clearTableGuestPresence(prev);
     }
+    hadPendingTableOrdersRef.current = false;
+    guestPaidIdleRef.current = false;
     writeSessionTable(n);
     setActiveTableNum(n);
     void pingTableGuestPresence(n);
@@ -244,6 +263,8 @@ export default function Home() {
     if (prev !== null) {
       void clearTableGuestPresence(prev);
     }
+    hadPendingTableOrdersRef.current = false;
+    guestPaidIdleRef.current = false;
     clearSessionTable();
     setActiveTableNum(null);
     setTableOrders([]);
@@ -331,6 +352,7 @@ export default function Home() {
       setTablePickerDraft(String(tableNum));
       setToastOrder(data.order);
       setQuantities({});
+      guestPaidIdleRef.current = false;
       closeModal();
       void fetchTableOrders({ silent: true });
     } catch (error) {
@@ -597,9 +619,10 @@ export default function Home() {
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="text-lg font-bold text-pink-600">이벤트</h2>
             <ul className="mt-3 space-y-2 text-sm text-zinc-700 sm:text-base">
-              <li>인스타그램 스토리 태그 시 음료 500원 할인</li>
-              <li>TIGRIS 관련 퀴즈 정답 시 랜덤 굿즈 증정</li>
-              <li>20시 이후 3인 이상 방문 시 감자튀김 업그레이드</li>
+              <li>
+                인스타그램: 주점에서 노는 사진 + 핑크색 이모티콘·스티커로 꾸밈 + @kutigris 태그 → 티그리스
+                세트 50% 할인
+              </li>
             </ul>
           </article>
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
@@ -614,10 +637,10 @@ export default function Home() {
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="text-lg font-bold text-pink-600">합석 안내</h2>
             <ul className="mt-3 space-y-2 text-sm text-zinc-700 sm:text-base">
-              <li>원하시는 분들끼리만 매칭 도와드립니다.</li>
+              <li>일반 합석·블라인드 합석 중 원하시는 방식으로 진행합니다.</li>
+              <li>합석을 원하시는 분께서 요청해 주시면 자리를 맞춰 드립니다.</li>
               <li>원치 않으시면 합석 없이 이용하셔도 됩니다.</li>
-              <li>합석 성사 시 안주 서비스가 제공될 수 있습니다.</li>
-              <li>현장 스태프에게 &quot;합석 도와주세요&quot;라고 말씀해주세요.</li>
+              <li>현장 스태프에게 &quot;합석 도와주세요&quot;라고 말씀해 주세요.</li>
             </ul>
           </article>
         </section>
