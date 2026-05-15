@@ -365,12 +365,6 @@ export default function AdminPage() {
             지금 동기화
           </button>
         </div>
-
-        <p className="mt-3 text-xs text-zinc-500">
-          목록이 비어 있거나 주문이 안 맞으면 Vercel 프로젝트 환경 변수에{" "}
-          <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_URL</span>,{" "}
-          <span className="font-mono text-zinc-600">UPSTASH_REDIS_REST_TOKEN</span> 설정을 확인하세요.
-        </p>
         {splitBrainWarning ? (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
             서버가 공유 저장소 없이 동작 중입니다. 요청마다 다른 컴퓨터가 응답하면 주문 목록이 비었다가
