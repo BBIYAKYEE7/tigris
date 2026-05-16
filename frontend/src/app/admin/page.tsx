@@ -195,24 +195,7 @@ export default function AdminPage() {
   }, [mergeRequests, playAlertSound]);
 
   useEffect(() => {
-    if (!mergeAlertOpen || !alertMergeRequest) {
-      return;
-    }
-    let cancelled = false;
-    const run = () => {
-      if (cancelled || !mounted.current) {
-        return;
-      }
-      playAlertSound();
-    };
-    const timeoutId = window.setTimeout(run, 100);
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [mergeAlertOpen, alertMergeRequest?.tableNum, playAlertSound]);
 
-  useEffect(() => {
     if (!alertOpen || !alertOrder) {
       return;
     }
@@ -400,6 +383,36 @@ export default function AdminPage() {
           playAlertSound();
         }
         setLastUpdatedAt(new Date());
+
+        // 합석요청 처리
+        try {
+          const mergeRes = await fetch(`${apiBaseUrl}/api/admin/merge-requests?_=${Date.now()}`, {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
+            },
+          });
+          const mergeData = (await mergeRes.json()) as {
+            mergeRequests?: Array<{ tableNum: number; requestedAt: string }>;
+          };
+          if (mergeRes.ok && Array.isArray(mergeData.mergeRequests)) {
+            if (!mounted.current) {
+              return;
+            }
+            setMergeRequests(mergeData.mergeRequests);
+            const prevMergeTableNums = new Set(previousMergeRequestsRef.current.map((r) => r.tableNum));
+            const newMerge = mergeData.mergeRequests.find((r) => !prevMergeTableNums.has(r.tableNum));
+            previousMergeRequestsRef.current = mergeData.mergeRequests;
+            if (newMerge) {
+              setAlertMergeRequest(newMerge);
+              setMergeAlertOpen(true);
+              playAlertSound();
+            }
+          }
+        } catch {
+          /* ignore merge requests error */
+        }
       } catch (err) {
         if (!mounted.current) {
           return;
@@ -416,10 +429,9 @@ export default function AdminPage() {
         }
         void refreshTableGuestPresence();
         void refreshTableTigrisSetEvents();
-        void refreshMergeRequests();
       }
     },
-    [apiBaseUrl, refreshTableGuestPresence, refreshTableTigrisSetEvents, refreshMergeRequests, playAlertSound],
+    [apiBaseUrl, refreshTableGuestPresence, refreshTableTigrisSetEvents],
   );
 
   useEffect(() => {
@@ -560,28 +572,6 @@ export default function AdminPage() {
       <section className="mx-auto max-w-5xl rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-extrabold text-pink-600">TIGRIS 관리자 화면</h1>
         <p className="mt-2 text-sm text-zinc-600">주문 메뉴와 결제 금액을 확인하고 결제완료 처리하세요.</p>
-
-        {mergeRequests.length > 0 ? (
-          <div className="mt-4 space-y-2">
-            {mergeRequests.map((req) => (
-              <div
-                key={req.tableNum}
-                className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2"
-              >
-                <span className="text-sm font-semibold text-blue-700">
-                  🪑 {req.tableNum}번 테이블이 합석을 요청했습니다
-                </span>
-                <button
-                  type="button"
-                  onClick={() => dismissMergeRequest(req.tableNum)}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-800"
-                >
-                  확인
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <p className="text-xs text-zinc-500">
