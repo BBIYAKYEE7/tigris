@@ -108,10 +108,6 @@ export default function Home() {
   const [orderConfirmOpen, setOrderConfirmOpen] = useState(false);
   const [orderConfirmError, setOrderConfirmError] = useState("");
 
-  const [isRequestingTableMerge, setIsRequestingTableMerge] = useState(false);
-  const [tableMergeRequestError, setTableMergeRequestError] = useState("");
-  const [tableMergeRequestSuccess, setTableMergeRequestSuccess] = useState(false);
-
   const tableNumberLocked = activeTableNum !== null && !tableChangeAllowed;
   const showTableSetupModal = sessionHydrated && activeTableNum === null;
   const anyModalOpen = showTableSetupModal || orderConfirmOpen;
@@ -233,41 +229,6 @@ export default function Home() {
     },
     [apiBaseUrl, activeTableNum, pingTableGuestPresence, clearTableGuestPresence],
   );
-
-  const requestTableMerge = useCallback(async () => {
-    if (activeTableNum === null) {
-      setTableMergeRequestError("테이블 번호를 먼저 입력해 주세요.");
-      return;
-    }
-    setTableMergeRequestError("");
-    setIsRequestingTableMerge(true);
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/tables/merge-request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tableNum: activeTableNum }),
-      });
-      const data = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        throw new Error(data.message ?? "합석요청에 실패했습니다.");
-      }
-      if (!mounted.current) {
-        return;
-      }
-      setTableMergeRequestSuccess(true);
-      setTimeout(() => setTableMergeRequestSuccess(false), 3000);
-    } catch (error) {
-      if (!mounted.current) {
-        return;
-      }
-      setTableMergeRequestError(describeFetchFailure(error));
-    } finally {
-      if (!mounted.current) {
-        return;
-      }
-      setIsRequestingTableMerge(false);
-    }
-  }, [apiBaseUrl, activeTableNum]);
 
   useEffect(() => {
     if (activeTableNum === null) {
@@ -678,20 +639,6 @@ export default function Home() {
               <li>원치 않으시면 합석 없이 이용하셔도 됩니다.</li>
               <li>현장 스태프에게 &quot;합석 도와주세요&quot;라고 말씀해 주세요.</li>
             </ul>
-            <button
-              type="button"
-              onClick={() => void requestTableMerge()}
-              disabled={isRequestingTableMerge || activeTableNum === null}
-              className="mt-4 w-full rounded-xl bg-blue-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-blue-300"
-            >
-              {isRequestingTableMerge ? "요청 중..." : "합석요청하기"}
-            </button>
-            {tableMergeRequestSuccess ? (
-              <p className="mt-2 text-sm text-emerald-600 font-semibold">✓ 합석을 요청했습니다. 스태프를 기해주세요!</p>
-            ) : null}
-            {tableMergeRequestError ? (
-              <p className="mt-2 text-sm text-rose-600">{tableMergeRequestError}</p>
-            ) : null}
           </article>
         </section>
       </main>

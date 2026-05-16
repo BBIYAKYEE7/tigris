@@ -40,11 +40,6 @@ type TablePendingSummary = {
   }>;
 };
 
-type MergeRequest = {
-  tableNum: number;
-  requestedAt: string;
-};
-
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
 /** `frontend/public/audio/alert.mp3` → 브라우저에서는 `/audio/alert.mp3` */
@@ -68,10 +63,6 @@ export default function AdminPage() {
   const [tableTigrisSetEvent, setTableTigrisSetEvent] = useState<Record<number, boolean>>({});
   const [eventToggleSaving, setEventToggleSaving] = useState<number | null>(null);
   const [sessionClock, setSessionClock] = useState(() => Date.now());
-  const [mergeRequests, setMergeRequests] = useState<MergeRequest[]>([]);
-  const [alertMergeRequest, setAlertMergeRequest] = useState<MergeRequest | null>(null);
-  const [mergeAlertOpen, setMergeAlertOpen] = useState(false);
-  const previousMergeRequestsRef = useRef<MergeRequest[]>([]);
 
   const sessionBounds = useMemo(
     () => getBusinessSessionBounds(new Date(sessionClock)),
@@ -183,18 +174,6 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    const prevTableNums = new Set(previousMergeRequestsRef.current.map((r) => r.tableNum));
-    const newMerge = mergeRequests.find((r) => !prevTableNums.has(r.tableNum));
-    previousMergeRequestsRef.current = mergeRequests;
-    
-    if (newMerge) {
-      setAlertMergeRequest(newMerge);
-      setMergeAlertOpen(true);
-      playAlertSound();
-    }
-  }, [mergeRequests, playAlertSound]);
-
-  useEffect(() => {
 
     if (!alertOpen || !alertOrder) {
       return;
@@ -249,43 +228,6 @@ export default function AdminPage() {
       /* ignore */
     }
   }, [apiBaseUrl]);
-
-  const refreshMergeRequests = useCallback(async () => {
-    try {
-      const r = await fetch(`${apiBaseUrl}/api/admin/merge-requests?_=${Date.now()}`, {
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-        },
-      });
-      const j = (await r.json()) as { mergeRequests?: Array<{ tableNum: number; requestedAt: string }> };
-      if (!r.ok || !Array.isArray(j.mergeRequests)) {
-        return;
-      }
-      if (!mounted.current) {
-        return;
-      }
-      setMergeRequests(j.mergeRequests);
-    } catch {
-      /* ignore */
-    }
-  }, [apiBaseUrl]);
-
-  const dismissMergeRequest = useCallback(
-    async (tableNum: number) => {
-      try {
-        await fetch(`${apiBaseUrl}/api/admin/merge-requests/${tableNum}`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-        });
-        setMergeRequests((prev) => prev.filter((r) => r.tableNum !== tableNum));
-      } catch {
-        /* ignore */
-      }
-    },
-    [apiBaseUrl],
-  );
 
   const refreshTableGuestPresence = useCallback(async () => {
     try {
@@ -383,36 +325,6 @@ export default function AdminPage() {
           playAlertSound();
         }
         setLastUpdatedAt(new Date());
-
-        // 합석요청 처리
-        try {
-          const mergeRes = await fetch(`${apiBaseUrl}/api/admin/merge-requests?_=${Date.now()}`, {
-            cache: "no-store",
-            headers: {
-              "Cache-Control": "no-cache",
-              Pragma: "no-cache",
-            },
-          });
-          const mergeData = (await mergeRes.json()) as {
-            mergeRequests?: Array<{ tableNum: number; requestedAt: string }>;
-          };
-          if (mergeRes.ok && Array.isArray(mergeData.mergeRequests)) {
-            if (!mounted.current) {
-              return;
-            }
-            setMergeRequests(mergeData.mergeRequests);
-            const prevMergeTableNums = new Set(previousMergeRequestsRef.current.map((r) => r.tableNum));
-            const newMerge = mergeData.mergeRequests.find((r) => !prevMergeTableNums.has(r.tableNum));
-            previousMergeRequestsRef.current = mergeData.mergeRequests;
-            if (newMerge) {
-              setAlertMergeRequest(newMerge);
-              setMergeAlertOpen(true);
-              playAlertSound();
-            }
-          }
-        } catch {
-          /* ignore merge requests error */
-        }
       } catch (err) {
         if (!mounted.current) {
           return;
@@ -830,51 +742,6 @@ export default function AdminPage() {
                 className="h-9 rounded-lg bg-pink-600 px-4 text-xs font-bold text-white transition hover:bg-pink-500"
               >
                 확인
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {mergeAlertOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="merge-alert-title"
-        >
-          <div className="w-full max-w-md rounded-2xl border border-blue-200 bg-white p-6 shadow-xl">
-            <h3 id="merge-alert-title" className="text-lg font-bold text-blue-600">
-              🪑 합석 요청
-            </h3>
-            <p className="mt-3 text-base font-semibold text-zinc-800">
-              {alertMergeRequest?.tableNum}번 테이블에서 합석을 요청했습니다.
-            </p>
-            <p className="mt-2 text-sm text-zinc-600">
-              스태프가 확인하고 합석을 진행해 주세요.
-            </p>
-            <p className="mt-4 text-xs text-zinc-500">
-              요청 시간: {alertMergeRequest ? new Date(alertMergeRequest.requestedAt).toLocaleString("ko-KR") : ""}
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setMergeAlertOpen(false)}
-                className="h-9 rounded-lg border border-blue-300 px-4 text-xs font-bold text-blue-600 transition hover:bg-blue-50"
-              >
-                나중에
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (alertMergeRequest) {
-                    void dismissMergeRequest(alertMergeRequest.tableNum);
-                  }
-                  setMergeAlertOpen(false);
-                }}
-                className="h-9 rounded-lg bg-blue-600 px-4 text-xs font-bold text-white transition hover:bg-blue-500"
-              >
-                처리 완료
               </button>
             </div>
           </div>
