@@ -4,6 +4,7 @@ import {
   clearTablePresence,
   parseTableNumFromCustomerName,
 } from "@/lib/server/table-presence";
+import { clearTableTigrisSetEvent } from "@/lib/server/table-tigris-event";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -24,6 +25,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         const stillPending = all.some((o) => o.customerName === label && o.status === "PENDING");
         if (!stillPending) {
           await clearTablePresence(tableNum);
+          await clearTableTigrisSetEvent(tableNum);
         }
       }
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { adjustedLineTotal, isTigrisSetMenuId } from "@/lib/billing";
 
 type OrderItem = {
   menuId: string;
@@ -50,6 +51,8 @@ export default function AdminPage() {
   const [alertOrder, setAlertOrder] = useState<Order | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
   const [guestActiveTables, setGuestActiveTables] = useState<Set<number>>(() => new Set());
+  const [tableTigrisSetEvent, setTableTigrisSetEvent] = useState<Record<number, boolean>>({});
+  const [eventToggleSaving, setEventToggleSaving] = useState<number | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -137,6 +140,35 @@ export default function AdminPage() {
       cancelled = true;
     };
   }, [alertOpen, alertOrder?.id, playAlertSound]);
+
+  const refreshTableTigrisSetEvents = useCallback(async () => {
+    try {
+      const r = await fetch(`${apiBaseUrl}/api/admin/table-events?_=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
+      const j = (await r.json()) as { tableEvents?: Record<string, boolean> };
+      if (!r.ok || !j.tableEvents || typeof j.tableEvents !== "object") {
+        return;
+      }
+      if (!mounted.current) {
+        return;
+      }
+      const next: Record<number, boolean> = {};
+      for (const [key, value] of Object.entries(j.tableEvents)) {
+        const tableNum = parseInt(key, 10);
+        if (!Number.isNaN(tableNum) && value) {
+          next[tableNum] = true;
+        }
+      }
+      setTableTigrisSetEvent(next);
+    } catch {
+      /* ignore */
+    }
+  }, [apiBaseUrl]);
 
   const refreshTableGuestPresence = useCallback(async () => {
     try {
@@ -248,9 +280,10 @@ export default function AdminPage() {
           setLoading(false);
         }
         void refreshTableGuestPresence();
+        void refreshTableTigrisSetEvents();
       }
     },
-    [apiBaseUrl, refreshTableGuestPresence],
+    [apiBaseUrl, refreshTableGuestPresence, refreshTableTigrisSetEvents],
   );
 
   useEffect(() => {
@@ -275,6 +308,52 @@ export default function AdminPage() {
   }, [fetchOrders]);
 
   const TABLE_COUNT = 27;
+
+  const tableHasTigrisSetPending = (summary: TablePendingSummary) =>
+    summary.mergedItems.some((item) => isTigrisSetMenuId(item.menuId));
+
+  const computeAdjustedTableTotal = (summary: TablePendingSummary, eventApplied: boolean) =>
+    summary.pendingOrders.reduce(
+      (sum, order) =>
+        sum +
+        order.items.reduce(
+          (lineSum, item) => lineSum + adjustedLineTotal(item, eventApplied),
+          0,
+        ),
+      0,
+    );
+
+  const setTigrisSetEventForTable = async (tableNum: number, participating: boolean) => {
+    setEventToggleSaving(tableNum);
+    setError("");
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/api/admin/tables/${tableNum}/tigris-set-event`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tigrisSetEventParticipating: participating }),
+        },
+      );
+      const data = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(data.message ?? "이벤트 상태 저장 실패");
+      }
+      setTableTigrisSetEvent((prev) => {
+        const next = { ...prev };
+        if (participating) {
+          next[tableNum] = true;
+        } else {
+          delete next[tableNum];
+        }
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "이벤트 상태 저장 실패");
+    } finally {
+      setEventToggleSaving(null);
+    }
+  };
 
   const pendingSummaryByTable = (tableNum: number): TablePendingSummary | null => {
     const label = `${tableNum}번 테이블`;
@@ -397,6 +476,14 @@ export default function AdminPage() {
             const tableNum = index + 1;
             const summary = pendingSummaryByTable(tableNum);
             const guestHere = guestActiveTables.has(tableNum);
+            const tigrisSetEventApplied = tableTigrisSetEvent[tableNum] === true;
+            const hasTigrisSet = summary ? tableHasTigrisSetPending(summary) : false;
+            const adjustedTotal =
+              summary != null ? computeAdjustedTableTotal(summary, tigrisSetEventApplied) : 0;
+            const eventDiscount =
+              summary != null && tigrisSetEventApplied
+                ? summary.totalAmount - adjustedTotal
+                : 0;
             return (
               <article
                 key={tableNum}
@@ -429,15 +516,63 @@ export default function AdminPage() {
                       최근 주문: {new Date(summary.latestCreatedAt).toLocaleTimeString("ko-KR")}
                     </p>
                     <ul className="mt-2 grow space-y-0.5 text-xs text-zinc-700">
-                      {summary.mergedItems.map((item) => (
-                        <li key={`${tableNum}-${item.menuId}`}>
-                          {item.name} × {item.quantity} ={" "}
-                          {formatKrw(item.lineTotal)}
-                        </li>
-                      ))}
+                      {summary.mergedItems.map((item) => {
+                        const displayTotal = adjustedLineTotal(item, tigrisSetEventApplied);
+                        const discounted =
+                          tigrisSetEventApplied && isTigrisSetMenuId(item.menuId);
+                        return (
+                          <li key={`${tableNum}-${item.menuId}`}>
+                            {item.name} × {item.quantity} ={" "}
+                            {discounted ? (
+                              <>
+                                <span className="text-zinc-400 line-through">
+                                  {formatKrw(item.lineTotal)}
+                                </span>{" "}
+                                <span className="font-semibold text-pink-700">
+                                  {formatKrw(displayTotal)}
+                                </span>
+                              </>
+                            ) : (
+                              formatKrw(displayTotal)
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
+                    {hasTigrisSet ? (
+                      <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg border border-pink-100 bg-pink-50/50 p-2 text-xs">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4 rounded border-pink-300 text-pink-600 focus:ring-pink-400"
+                          checked={tigrisSetEventApplied}
+                          disabled={eventToggleSaving === tableNum}
+                          onChange={(e) =>
+                            void setTigrisSetEventForTable(tableNum, e.target.checked)
+                          }
+                        />
+                        <span className="text-zinc-700">
+                          <span className="font-semibold text-pink-700">스토리 이벤트 참여</span>
+                          <span className="mt-0.5 block text-[11px] text-zinc-500">
+                            @kutigris 태그 스토리 확인 시 티그세트 50% 할인
+                          </span>
+                        </span>
+                      </label>
+                    ) : null}
                     <p className="mt-2 text-xs font-bold text-zinc-800">
-                      누적 결제 금액: {formatKrw(summary.totalAmount)}
+                      누적 결제 금액:{" "}
+                      {tigrisSetEventApplied && eventDiscount > 0 ? (
+                        <>
+                          <span className="text-zinc-400 line-through">
+                            {formatKrw(summary.totalAmount)}
+                          </span>{" "}
+                          {formatKrw(adjustedTotal)}
+                          <span className="ml-1 font-medium text-pink-700">
+                            (−{formatKrw(eventDiscount)})
+                          </span>
+                        </>
+                      ) : (
+                        formatKrw(summary.totalAmount)
+                      )}
                     </p>
                     <button
                       type="button"
@@ -531,31 +666,14 @@ export default function AdminPage() {
             <p className="mt-3 text-sm font-bold text-zinc-800">
               총 결제 금액: {formatKrw(alertOrder.totalAmount)}
             </p>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex justify-end">
               <button
                 type="button"
                 onClick={() => setAlertOpen(false)}
-                className="h-9 rounded-lg border border-zinc-200 px-4 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                className="h-9 rounded-lg bg-pink-600 px-4 text-xs font-bold text-white transition hover:bg-pink-500"
               >
-                닫기
+                확인
               </button>
-              {alertOrder.status === "PENDING" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const tableNum = Number.parseInt(alertOrder.customerName, 10);
-                    if (!Number.isNaN(tableNum)) {
-                      void markTablePaid(tableNum);
-                    } else {
-                      void markOrdersPaid([alertOrder.id]);
-                    }
-                    setAlertOpen(false);
-                  }}
-                  className="h-9 rounded-lg bg-emerald-600 px-4 text-xs font-bold text-white transition hover:bg-emerald-500"
-                >
-                  테이블 전체 결제완료
-                </button>
-              ) : null}
             </div>
           </div>
         </div>
