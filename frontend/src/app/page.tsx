@@ -527,7 +527,6 @@ export default function Home() {
           ) : null}
           <p className="mt-2 text-sm text-zinc-600">
             테이블비 <span className="font-semibold">{formatKrw(TABLE_FEE_EXAMPLE)}</span>
-            <span className="text-zinc-500"> (예시 금액, 확정 전)</span>
           </p>
           {activeTableNum !== null ? (
             <div className="mt-5 border-t border-pink-50 pt-5">
@@ -590,7 +589,6 @@ export default function Home() {
             {tableFeeDue > 0 ? (
               <p>
                 {TABLE_FEE_NAME}: <span className="font-semibold">{formatKrw(tableFeeDue)}</span>
-                <span className="text-zinc-500"> (예시, 확정 전)</span>
               </p>
             ) : tableFeeAlreadyOnBill ? (
               <p className="text-zinc-500">{TABLE_FEE_NAME}은 이미 결제 대기 목록에 포함되어 있습니다.</p>
@@ -621,7 +619,7 @@ export default function Home() {
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
             <h2 className="text-lg font-bold text-pink-600">주점 안내</h2>
             <ul className="mt-3 space-y-2 text-sm text-zinc-700 sm:text-base">
-              <li>테이블비: {formatKrw(TABLE_FEE_EXAMPLE)} (예시, 확정 전)</li>
+              <li>테이블비: {formatKrw(TABLE_FEE_EXAMPLE)}</li>
               <li>운영 시간: 18:00 ~ 24:00</li>
               <li>결제: 카드 / 계좌이체 / 현금 가능</li>
               <li>문의: @kutigris (Instagram)</li>
