@@ -84,5 +84,8 @@ self.addEventListener("message", (event) => {
     startPolling();
   } else if (event.data?.type === "STOP_POLLING") {
     stopPolling();
+  } else if (event.data?.type === "SET_PREVIOUS_ORDER_IDS") {
+    // 메인 스레드로부터 받은 현재 주문 ID로 previousOrderIds 업데이트
+    previousOrderIds = new Set(event.data.orderIds || []);
   }
 });

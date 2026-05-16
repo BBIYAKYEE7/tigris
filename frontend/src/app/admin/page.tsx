@@ -325,6 +325,14 @@ export default function AdminPage() {
           setAlertOpen(true);
           playAlertSound();
         }
+        // Worker에게 현재 주문 ID 목록을 알려주기 (첫 주문도 감지되도록)
+        if (workerRef.current) {
+          const orderIds = nextOrders.map((o) => o.id);
+          workerRef.current.postMessage({
+            type: "SET_PREVIOUS_ORDER_IDS",
+            orderIds,
+          });
+        }
         setLastUpdatedAt(new Date());
       } catch (err) {
         if (!mounted.current) {
