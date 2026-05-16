@@ -12,14 +12,15 @@
 
 ### 손님 화면 (메뉴판)
 ```
-https://tigris.vercel.app (또는 개발자가 알려준 주소)
+https://love-tigris.vercel.app/
 ```
 - 손님들이 스마트폰으로 접속
+- QR코드 제작 후 테이블 마다 부착
 - 테이블 번호 입력 후 메뉴 선택
 
 ### 관리자 화면 (주문 관리)
 ```
-https://tigris.vercel.app/admin (또는 개발자가 알려준 주소/admin)
+https://love-tigris.vercel.app/admin
 ```
 - 카운터에서 노트북/태블릿으로 접속
 - 주문 목록 확인 및 결제 처리
@@ -134,7 +135,8 @@ https://tigris.vercel.app/admin (또는 개발자가 알려준 주소/admin)
 | 새로운 기능을 추가하고 싶어요 | 개발자에게 의논하기 | - |
 
 **개발자 연락처:** (여기에 개발자 정보 작성)
-
+- @bbiyakyee7
+- 010-8071-5573
 ---
 
 ## 📄 라이선스
