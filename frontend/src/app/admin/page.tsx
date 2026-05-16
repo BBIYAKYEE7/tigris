@@ -63,6 +63,7 @@ export default function AdminPage() {
   const [tableTigrisSetEvent, setTableTigrisSetEvent] = useState<Record<number, boolean>>({});
   const [eventToggleSaving, setEventToggleSaving] = useState<number | null>(null);
   const [sessionClock, setSessionClock] = useState(() => Date.now());
+  const [paidButtonLoadingTableNum, setPaidButtonLoadingTableNum] = useState<number | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
   const sessionBounds = useMemo(
@@ -518,7 +519,12 @@ export default function AdminPage() {
     if (!summary) {
       return;
     }
-    await markOrdersPaid(summary.pendingOrders.map((order) => order.id));
+    setPaidButtonLoadingTableNum(tableNum);
+    try {
+      await markOrdersPaid(summary.pendingOrders.map((order) => order.id));
+    } finally {
+      setPaidButtonLoadingTableNum(null);
+    }
   };
 
   return (
@@ -680,9 +686,20 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => void markTablePaid(tableNum)}
-                      className="mt-2 h-8 rounded-lg bg-emerald-600 px-2 text-[11px] font-bold text-white transition hover:bg-emerald-500"
+                      disabled={paidButtonLoadingTableNum === tableNum}
+                      className="mt-2 flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2 text-[11px] font-bold text-white transition hover:bg-emerald-500 disabled:bg-emerald-400"
                     >
-                      테이블 결제완료 처리
+                      {paidButtonLoadingTableNum === tableNum ? (
+                        <>
+                          <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          <span>처리중</span>
+                        </>
+                      ) : (
+                        "테이블 결제완료 처리"
+                      )}
                     </button>
                   </>
                 ) : (
