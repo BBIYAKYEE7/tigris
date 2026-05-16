@@ -40,6 +40,11 @@ type TablePendingSummary = {
   }>;
 };
 
+type MergeRequest = {
+  tableNum: number;
+  requestedAt: string;
+};
+
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
 /** `frontend/public/audio/alert.mp3` → 브라우저에서는 `/audio/alert.mp3` */
@@ -63,6 +68,7 @@ export default function AdminPage() {
   const [tableTigrisSetEvent, setTableTigrisSetEvent] = useState<Record<number, boolean>>({});
   const [eventToggleSaving, setEventToggleSaving] = useState<number | null>(null);
   const [sessionClock, setSessionClock] = useState(() => Date.now());
+  const [mergeRequests, setMergeRequests] = useState<MergeRequest[]>([]);
 
   const sessionBounds = useMemo(
     () => getBusinessSessionBounds(new Date(sessionClock)),
@@ -228,6 +234,43 @@ export default function AdminPage() {
     }
   }, [apiBaseUrl]);
 
+  const refreshMergeRequests = useCallback(async () => {
+    try {
+      const r = await fetch(`${apiBaseUrl}/api/admin/merge-requests?_=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
+      const j = (await r.json()) as { mergeRequests?: Array<{ tableNum: number; requestedAt: string }> };
+      if (!r.ok || !Array.isArray(j.mergeRequests)) {
+        return;
+      }
+      if (!mounted.current) {
+        return;
+      }
+      setMergeRequests(j.mergeRequests);
+    } catch {
+      /* ignore */
+    }
+  }, [apiBaseUrl]);
+
+  const dismissMergeRequest = useCallback(
+    async (tableNum: number) => {
+      try {
+        await fetch(`${apiBaseUrl}/api/admin/merge-requests/${tableNum}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+        });
+        setMergeRequests((prev) => prev.filter((r) => r.tableNum !== tableNum));
+      } catch {
+        /* ignore */
+      }
+    },
+    [apiBaseUrl],
+  );
+
   const refreshTableGuestPresence = useCallback(async () => {
     try {
       const r = await fetch(`${apiBaseUrl}/api/admin/table-presence?_=${Date.now()}`, {
@@ -340,9 +383,10 @@ export default function AdminPage() {
         }
         void refreshTableGuestPresence();
         void refreshTableTigrisSetEvents();
+        void refreshMergeRequests();
       }
     },
-    [apiBaseUrl, refreshTableGuestPresence, refreshTableTigrisSetEvents, playAlertSound],
+    [apiBaseUrl, refreshTableGuestPresence, refreshTableTigrisSetEvents, refreshMergeRequests, playAlertSound],
   );
 
   useEffect(() => {
@@ -483,6 +527,29 @@ export default function AdminPage() {
       <section className="mx-auto max-w-5xl rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
         <h1 className="text-2xl font-extrabold text-pink-600">TIGRIS 관리자 화면</h1>
         <p className="mt-2 text-sm text-zinc-600">주문 메뉴와 결제 금액을 확인하고 결제완료 처리하세요.</p>
+
+        {mergeRequests.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {mergeRequests.map((req) => (
+              <div
+                key={req.tableNum}
+                className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2"
+              >
+                <span className="text-sm font-semibold text-blue-700">
+                  🪑 {req.tableNum}번 테이블이 합석을 요청했습니다
+                </span>
+                <button
+                  type="button"
+                  onClick={() => dismissMergeRequest(req.tableNum)}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                >
+                  확인
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <p className="text-xs text-zinc-500">
             {loading && orders.length === 0
