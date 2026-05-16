@@ -475,6 +475,28 @@ export default function Home() {
         </div>
 
         {activeTableNum !== null ? (
+          <section className="rounded-3xl border border-pink-100 bg-white px-5 py-4 shadow-sm sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-pink-700">
+                {activeTableNum}번 테이블
+                {tableNumberLocked ? (
+                  <span className="ml-2 font-normal text-zinc-600">· 결제 전까지 번호 변경 불가</span>
+                ) : (
+                  <span className="ml-2 font-normal text-emerald-700">· 결제 완료, 테이블 변경 가능</span>
+                )}
+              </p>
+              {tableChangeAllowed && tableOrders.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={startTableChangeAfterPayment}
+                  className="text-sm font-semibold text-pink-600 underline-offset-2 hover:underline"
+                >
+                  다른 테이블로 변경
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
 
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-3xl border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
