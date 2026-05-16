@@ -69,6 +69,9 @@ export default function AdminPage() {
   const [eventToggleSaving, setEventToggleSaving] = useState<number | null>(null);
   const [sessionClock, setSessionClock] = useState(() => Date.now());
   const [mergeRequests, setMergeRequests] = useState<MergeRequest[]>([]);
+  const [alertMergeRequest, setAlertMergeRequest] = useState<MergeRequest | null>(null);
+  const [mergeAlertOpen, setMergeAlertOpen] = useState(false);
+  const previousMergeRequestsRef = useRef<MergeRequest[]>([]);
 
   const sessionBounds = useMemo(
     () => getBusinessSessionBounds(new Date(sessionClock)),
@@ -178,6 +181,36 @@ export default function AdminPage() {
     oneShot.volume = 0.9;
     void oneShot.play().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const prevTableNums = new Set(previousMergeRequestsRef.current.map((r) => r.tableNum));
+    const newMerge = mergeRequests.find((r) => !prevTableNums.has(r.tableNum));
+    previousMergeRequestsRef.current = mergeRequests;
+    
+    if (newMerge) {
+      setAlertMergeRequest(newMerge);
+      setMergeAlertOpen(true);
+      playAlertSound();
+    }
+  }, [mergeRequests, playAlertSound]);
+
+  useEffect(() => {
+    if (!mergeAlertOpen || !alertMergeRequest) {
+      return;
+    }
+    let cancelled = false;
+    const run = () => {
+      if (cancelled || !mounted.current) {
+        return;
+      }
+      playAlertSound();
+    };
+    const timeoutId = window.setTimeout(run, 100);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [mergeAlertOpen, alertMergeRequest?.tableNum, playAlertSound]);
 
   useEffect(() => {
     if (!alertOpen || !alertOrder) {
@@ -807,6 +840,51 @@ export default function AdminPage() {
                 className="h-9 rounded-lg bg-pink-600 px-4 text-xs font-bold text-white transition hover:bg-pink-500"
               >
                 확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {mergeAlertOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="merge-alert-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-blue-200 bg-white p-6 shadow-xl">
+            <h3 id="merge-alert-title" className="text-lg font-bold text-blue-600">
+              🪑 합석 요청
+            </h3>
+            <p className="mt-3 text-base font-semibold text-zinc-800">
+              {alertMergeRequest?.tableNum}번 테이블에서 합석을 요청했습니다.
+            </p>
+            <p className="mt-2 text-sm text-zinc-600">
+              스태프가 확인하고 합석을 진행해 주세요.
+            </p>
+            <p className="mt-4 text-xs text-zinc-500">
+              요청 시간: {alertMergeRequest ? new Date(alertMergeRequest.requestedAt).toLocaleString("ko-KR") : ""}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMergeAlertOpen(false)}
+                className="h-9 rounded-lg border border-blue-300 px-4 text-xs font-bold text-blue-600 transition hover:bg-blue-50"
+              >
+                나중에
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (alertMergeRequest) {
+                    void dismissMergeRequest(alertMergeRequest.tableNum);
+                  }
+                  setMergeAlertOpen(false);
+                }}
+                className="h-9 rounded-lg bg-blue-600 px-4 text-xs font-bold text-white transition hover:bg-blue-500"
+              >
+                처리 완료
               </button>
             </div>
           </div>
