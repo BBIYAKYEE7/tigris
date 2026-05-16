@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { adjustedLineTotal, isTigrisSetMenuId } from "@/lib/billing";
+import {
+  computeSessionRevenue,
+  formatBusinessSessionRange,
+  getBusinessSessionBounds,
+  getOrderPaidAt,
+  isPaidOrderInBusinessSession,
+} from "@/lib/business-session";
 
 type OrderItem = {
   menuId: string;
@@ -16,6 +23,7 @@ type Order = {
   totalAmount: number;
   status: "PENDING" | "PAID";
   createdAt: string;
+  paidAt?: string;
   items: OrderItem[];
 };
 
@@ -35,7 +43,7 @@ type TablePendingSummary = {
 const formatKrw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const POLL_MS = 4000;
 /** `frontend/public/audio/alert.mp3` → 브라우저에서는 `/audio/alert.mp3` */
-const ALERT_SOUND_SRC = "audio/alert.mp3;"
+const ALERT_SOUND_SRC = "/audio/alert.mp3";
 
 export default function AdminPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
@@ -48,11 +56,34 @@ export default function AdminPage() {
   const fetchSeqRef = useRef(0);
   const previousOrdersRef = useRef<Order[]>([]);
   const alertAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUnlockedRef = useRef(false);
   const [alertOrder, setAlertOrder] = useState<Order | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
   const [guestActiveTables, setGuestActiveTables] = useState<Set<number>>(() => new Set());
   const [tableTigrisSetEvent, setTableTigrisSetEvent] = useState<Record<number, boolean>>({});
   const [eventToggleSaving, setEventToggleSaving] = useState<number | null>(null);
+  const [sessionClock, setSessionClock] = useState(() => Date.now());
+
+  const sessionBounds = useMemo(
+    () => getBusinessSessionBounds(new Date(sessionClock)),
+    [sessionClock],
+  );
+
+  const sessionPaidOrders = useMemo(
+    () =>
+      orders
+        .filter((order) => isPaidOrderInBusinessSession(order, sessionBounds))
+        .sort(
+          (a, b) =>
+            (getOrderPaidAt(b)?.getTime() ?? 0) - (getOrderPaidAt(a)?.getTime() ?? 0),
+        ),
+    [orders, sessionBounds],
+  );
+
+  const sessionRevenue = useMemo(
+    () => computeSessionRevenue(orders, sessionBounds),
+    [orders, sessionBounds],
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -60,6 +91,23 @@ export default function AdminPage() {
       mounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const tick = () => setSessionClock(Date.now());
+    const intervalId = window.setInterval(tick, 60_000);
+    const { end } = getBusinessSessionBounds();
+    const msUntilReset = end.getTime() + 1 - Date.now();
+    const resetTimeoutId = window.setTimeout(
+      () => {
+        tick();
+      },
+      Math.max(msUntilReset, 1_000),
+    );
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(resetTimeoutId);
+    };
+  }, [sessionClock]);
 
   useEffect(() => {
     const audio = new Audio(ALERT_SOUND_SRC);
@@ -75,7 +123,7 @@ export default function AdminPage() {
   useEffect(() => {
     const unlock = () => {
       const audio = alertAudioRef.current;
-      if (!audio) {
+      if (!audio || audioUnlockedRef.current) {
         return;
       }
       const prevVolume = audio.volume;
@@ -86,13 +134,23 @@ export default function AdminPage() {
           audio.pause();
           audio.currentTime = 0;
           audio.volume = prevVolume;
+          audioUnlockedRef.current = true;
         })
         .catch(() => {
           audio.volume = prevVolume;
         });
     };
-    window.addEventListener("pointerdown", unlock, { once: true });
-    return () => window.removeEventListener("pointerdown", unlock);
+    const opts: AddEventListenerOptions = { once: true, capture: true };
+    window.addEventListener("pointerdown", unlock, opts);
+    window.addEventListener("click", unlock, opts);
+    window.addEventListener("keydown", unlock, opts);
+    window.addEventListener("touchstart", unlock, opts);
+    return () => {
+      window.removeEventListener("pointerdown", unlock, opts);
+      window.removeEventListener("click", unlock, opts);
+      window.removeEventListener("keydown", unlock, opts);
+      window.removeEventListener("touchstart", unlock, opts);
+    };
   }, []);
 
   const playAlertSound = useCallback(() => {
@@ -263,6 +321,7 @@ export default function AdminPage() {
         if (newPending) {
           setAlertOrder(newPending);
           setAlertOpen(true);
+          playAlertSound();
         }
         setLastUpdatedAt(new Date());
       } catch (err) {
@@ -283,7 +342,7 @@ export default function AdminPage() {
         void refreshTableTigrisSetEvents();
       }
     },
-    [apiBaseUrl, refreshTableGuestPresence, refreshTableTigrisSetEvents],
+    [apiBaseUrl, refreshTableGuestPresence, refreshTableTigrisSetEvents, playAlertSound],
   );
 
   useEffect(() => {
@@ -595,34 +654,42 @@ export default function AdminPage() {
         </div>
 
         <div className="rounded-2xl border border-pink-50 bg-white/70 p-4 text-xs text-zinc-600">
-          <h3 className="text-sm font-bold text-pink-600">전체 주문 리스트</h3>
-          {orders.length === 0 ? (
-            <p className="mt-2">주문이 들어오면 여기에도 시간순으로 쌓입니다.</p>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <h3 className="text-sm font-bold text-pink-600">전체 주문 리스트</h3>
+            <p className="text-[11px] text-zinc-500">
+              영업일 {formatBusinessSessionRange(sessionBounds)} · 매일 03:00 초기화
+            </p>
+          </div>
+          <p className="mt-3 rounded-xl bg-pink-50 px-3 py-2 text-sm font-bold text-pink-800">
+            총 매출: {formatKrw(sessionRevenue)}
+            <span className="ml-2 text-xs font-medium text-pink-600/80">
+              (결제완료 {sessionPaidOrders.length}건)
+            </span>
+          </p>
+          {sessionPaidOrders.length === 0 ? (
+            <p className="mt-2">이번 영업일에 결제완료된 주문이 없습니다.</p>
           ) : (
-            <ul className="mt-2 space-y-1 max-h-64 overflow-y-auto">
-              {orders.map((order) => (
-                <li key={order.id} className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[11px] text-zinc-500">
-                    {new Date(order.createdAt).toLocaleTimeString("ko-KR")}
-                  </span>
-                  <span className="text-xs font-semibold text-zinc-700">
-                    {order.customerName}
-                  </span>
-                  <span className="text-xs text-zinc-500">{order.id}</span>
-                  <span className="text-xs font-bold text-pink-700">
-                    {formatKrw(order.totalAmount)}
-                  </span>
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                      order.status === "PAID"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {order.status === "PAID" ? "결제완료" : "결제대기"}
-                  </span>
-                </li>
-              ))}
+            <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">
+              {sessionPaidOrders.map((order) => {
+                const paidAt = getOrderPaidAt(order);
+                return (
+                  <li key={order.id} className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[11px] text-zinc-500">
+                      {(paidAt ?? new Date(order.createdAt)).toLocaleTimeString("ko-KR")}
+                    </span>
+                    <span className="text-xs font-semibold text-zinc-700">
+                      {order.customerName}
+                    </span>
+                    <span className="text-xs text-zinc-500">{order.id}</span>
+                    <span className="text-xs font-bold text-pink-700">
+                      {formatKrw(order.totalAmount)}
+                    </span>
+                    <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                      결제완료
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

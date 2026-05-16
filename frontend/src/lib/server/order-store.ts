@@ -23,6 +23,8 @@ export type Order = {
   totalAmount: number;
   status: OrderStatus;
   createdAt: string;
+  /** 결제완료 처리 시각 (영업일·매출 집계용) */
+  paidAt?: string;
 };
 
 type OrderStore = {
@@ -111,6 +113,9 @@ class InMemoryOrderStore implements OrderStore {
       throw new Error("주문을 찾을 수 없습니다.");
     }
     target.status = status;
+    if (status === "PAID" && !target.paidAt) {
+      target.paidAt = new Date().toISOString();
+    }
     return target;
   }
 }
@@ -186,6 +191,9 @@ class UpstashOrderStore implements OrderStore {
       throw new Error("주문을 찾을 수 없습니다.");
     }
     target.status = status;
+    if (status === "PAID" && !target.paidAt) {
+      target.paidAt = new Date().toISOString();
+    }
     await this.writeOrders(current);
     return target;
   }
