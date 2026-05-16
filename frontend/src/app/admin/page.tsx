@@ -63,6 +63,7 @@ export default function AdminPage() {
   const [tableTigrisSetEvent, setTableTigrisSetEvent] = useState<Record<number, boolean>>({});
   const [eventToggleSaving, setEventToggleSaving] = useState<number | null>(null);
   const [sessionClock, setSessionClock] = useState(() => Date.now());
+  const workerRef = useRef<Worker | null>(null);
 
   const sessionBounds = useMemo(
     () => getBusinessSessionBounds(new Date(sessionClock)),
@@ -366,6 +367,39 @@ export default function AdminPage() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [fetchOrders]);
+
+  // 백그라운드에서도 폴링하기 위해 Web Worker 시작
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Worker" in window)) {
+      return;
+    }
+
+    try {
+      const worker = new Worker("/admin-worker.js");
+      workerRef.current = worker;
+
+      // 폴링 시작 신호
+      worker.postMessage({ type: "START_POLLING" });
+
+      // Worker로부터 새 주문 알림 받기
+      worker.onmessage = (event: MessageEvent) => {
+        if (event.data?.type === "NEW_ORDERS_BACKGROUND" && mounted.current) {
+          // 백그라운드에서 새 주문 감지됨 → 음성 알림 재생
+          playAlertSound();
+        }
+      };
+
+      return () => {
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: "STOP_POLLING" });
+          workerRef.current.terminate();
+          workerRef.current = null;
+        }
+      };
+    } catch {
+      // Worker가 지원되지 않으면 무시
+    }
+  }, []);
 
   const TABLE_COUNT = 27;
 
