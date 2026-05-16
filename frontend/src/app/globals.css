@@ -62,3 +62,16 @@ body {
       0 0 18px rgba(255, 227, 240, 0.6);
   }
 }
+
+@keyframes marquee {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.marquee-scroll {
+  animation: marquee 20s linear infinite;
+}

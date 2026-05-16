@@ -468,6 +468,12 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="overflow-hidden bg-gradient-to-r from-pink-500 to-pink-400 py-2 shadow-sm sm:py-3">
+          <div className="marquee-scroll whitespace-nowrap py-1 text-sm font-semibold text-white sm:text-base">
+            ✨ 합석을 원하는 경우 카운터에 요청해주세요. 합석이 이루어지면 각자 계산 후 한 테이블로 합쳐드립니다. ✨
+          </div>
+        </section>
+
         {activeTableNum !== null ? (
           <section className="rounded-3xl border border-pink-100 bg-white px-5 py-4 shadow-sm sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
